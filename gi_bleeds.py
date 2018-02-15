@@ -27,10 +27,15 @@ if __name__ == "__main__":
 
     # montage.add_exam_codes({'IR657':  7855,   # Vascular selection, other codes?
     #                         'IMG240': 7797,   # CTA Ab/Pelvis
-    #                         'IMG794': 7740    # CT Ab/Pelvis W IV
+    #                         'IMG794': 7740,   # CT Ab/Pelvis W IV
+    #                         'IMG5400': 8874   # CTA ENDOLEAK
     #                         })
 
-    qdict = { "exam_type":  [7797, 7740]}
+    qdict = { "exam_type":  [7740, 8874]}
+    worklist = montage.update_worklist(worklist, time_delta="+1d", qdict=qdict, suffix="+CT")
+
+    # Catches some 239s and 216s
+    qdict = { "cpt": [10913, 10912, 10824]}
     worklist = montage.update_worklist(worklist, time_delta="+1d", qdict=qdict, suffix="+CT")
 
     qdict = { "exam_type":  [7855]}
@@ -54,7 +59,7 @@ if __name__ == "__main__":
     fieldnames.append('Report+XA')
     fieldnames.append('ExamCompleted+XA')
 
-    csv_out = os.path.splitext(csv_file)[0]+"+mon.csv"
+    csv_out = os.path.splitext(csv_file)[0]+"+mon2.csv"
     DixelTools.save_csv(csv_out, worklist, fieldnames)
 
 
