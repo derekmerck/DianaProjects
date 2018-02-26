@@ -1,5 +1,4 @@
-"""
-Grand/Laurie Low-Dose Renal Stone Research Protocol
+"""Grand/Laurie Low-Dose Renal Stone Research Protocol
 
 Merck, Winter 2018
 
@@ -11,13 +10,18 @@ Merck, Winter 2018
 
 ## Create a docker repo on Hounsfield
 
-docker run -p 4251:4242 -p 8051:8042 --rm -d -v /tmp/orthanc_uldrs.json:/etc/orthanc/orthanc.json:ro --name uldrs osimis/orthanc --env WVP_ALPHA_ENABLED=true
+```bash
+$ docker run -p 4251:4242 -p 8051:8042 --rm -d -v /tmp/orthanc_uldrs.json:/etc/orthanc/orthanc.json:ro --name uldrs osimis/orthanc --env WVP_ALPHA_ENABLED=true
+```
+
 """
+
+
 
 from DixelKit import DixelTools
 from DixelKit.Dixel import Dixel
 from DixelKit.Orthanc import Orthanc, OrthancProxy
-from utilities.GUIDMint.GUIDMint import PseudoMint
+from GUIDMint.GUIDMint import PseudoMint
 
 from pprint import pformat
 import logging
@@ -27,6 +31,7 @@ from hashlib import md5
 
 
 def lookup_seruids(proxy, series_qs, data_root, csv_fn):
+    """Lookup series UUIDs from PACS"""
 
     csv_in = os.path.join(data_root, csv_fn)
     worklist, fieldnames = DixelTools.load_csv(csv_in)
@@ -75,6 +80,8 @@ def copy_from_pacs(proxy, data_root, csv_fn ):
 
 
 def anonymize_and_delete(orthanc, noop=False):
+    """Use a PseudoMint to anonymize DICOM metadata and delete source"""
+
     logging.debug(orthanc.series)
     mint = PseudoMint()
     lexicon = {}

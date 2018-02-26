@@ -1,3 +1,7 @@
+"""
+Workflow to scrape positives, age match normals, collect, anonymize, and download
+"""
+
 import logging
 import yaml
 import os
@@ -7,7 +11,7 @@ from hashlib import md5
 from DixelKit import DixelTools
 from DixelKit.Montage import Montage
 from DixelKit.Orthanc import Orthanc, OrthancProxy
-from utilities.GUIDMint.GUIDMint import PseudoMint
+from GUIDMint import PseudoMint
 
 LOOKUP_POS_ANS     = False
 MATCH_NORMALS      = False
@@ -32,7 +36,10 @@ def lookup_accessions(report_db, csv_fn):
 
 def match_normals(data_root, pos_csv_fn, neg_csv_fn):
 
-    candidates, fieldnames1 = DixelTools.load_csv(neg_csv_fn)
+    positives, = DixelTools.load_csv(pos_csv_fn)
+    logging.debug(positives)
+
+    candidates, fieldnames = DixelTools.load_csv(neg_csv_fn)
     logging.debug(candidates)
 
     # Remove any f/u scans from same patient to prevent confusion
@@ -70,10 +77,17 @@ def match_normals(data_root, pos_csv_fn, neg_csv_fn):
 
     csv_out = os.path.splitext(neg_csv_file)[0] + "+matched.csv"
     logging.debug(csv_out)
-    DixelTools.save_csv(csv_out, normals, fieldnames1)
+    DixelTools.save_csv(csv_out, normals, fieldnames)
 
 
 def create_worklist(data_root, pos_csv_fn, neg_csv_fn):
+
+    positives, fieldnames0 = DixelTools.load_csv(pos_csv_fn)
+    logging.debug(positives)
+
+    normals, fieldnames1 = DixelTools.load_csv(neg_csv_fn)
+    logging.debug(normals)
+
     for d in positives:
         d.meta['categories'] = ['positive', 'head', 'cta']
     for d in normals:
@@ -93,35 +107,57 @@ def create_worklist(data_root, pos_csv_fn, neg_csv_fn):
     DixelTools.save_csv(csv_file, worklist, fieldnames0)
 
 
-def anonymize_and_save(orthanc, save_dir, noop=True):
+def anonymize_and_save(orthanc, data_root, wk_csv_fn, save_dir, noop=True):
+
+    # worklist, fieldnames = DixelTools.load_csv(os.path.join(data_root, wk_csv_fn))
+    # logging.debug(worklist)
+
+    worklist = orthanc.studies
 
     mint = PseudoMint()
     lexicon = {}
 
-    for d in orthanc.series:
+    for d in worklist:
+
+        if d not in orthanc.studies:
+            logging.warn("Missing study for {}".format(d.meta['Last Name']))
+            continue
+
         d = orthanc.update(d)
 
         logging.debug(pformat(d.meta))
 
-        name = d.meta["PatientName"]
+        name = (d.meta["PatientName"]).upper()
         gender = d.meta['PatientSex']
-        age = int(d.meta['PatientAge'][0:3])
 
-        new_id = mint.pseudo_identity(name=name,
-                                      gender=gender,
-                                      age=age)
+        if d.meta.get('PatientAge'):
+            age = int(d.meta['PatientAge'][0:3])
+
+            new_id = mint.pseudo_identity(name=name,
+                                          gender=gender,
+                                          age=age)
+
+        elif d.meta.get('PatientBirthDate'):
+            dob = d.meta.get('PatientBirthDate')
+            dob = dob[:4]+'-'+dob[4:6]+'-'+dob[6:]
+            new_id = mint.pseudo_identity(name=name,
+                                          gender=gender,
+                                          dob=dob)
 
         logging.debug(pformat(new_id))
 
-        lexicon[d.meta['PatientName'],d.meta['PatientID']] = new_id
+        d.meta['AnonID'] = new_id[0]
+        d.meta['AnonName'] = new_id[1]
+        d.meta['AnonDoB'] = new_id[2].replace('-', '')
+        d.meta['AnonAccessionNumber'] = md5(d.meta['AccessionNumber']).hexdigest()
 
         r = {
             'Remove': ['SeriesNumber'],
             'Replace': {
-                'PatientName': new_id[1],
-                'PatientID': new_id[0],
-                'PatientBirthDate': new_id[2].replace('-', ''),
-                'AccessionNumber': md5(d.meta['AccessionNumber']).hexdigest()
+                'PatientName': d.meta['AnonName'],
+                'PatientID': d.meta['AnonID'],
+                'PatientBirthDate': d.meta['AnonDoB'],
+                'AccessionNumber': d.meta['AnonAccessionNumber']
             },
             'Keep': ['PatientSex', 'StudyDescription', 'SeriesDescription'],
             'Force': True
@@ -129,16 +165,18 @@ def anonymize_and_save(orthanc, save_dir, noop=True):
 
         logging.debug(pformat(r))
 
+        if os.path.exists(os.path.join(save_dir, d.meta['AnonID']+'.zip')):
+            logging.debug('{} already exists -- skipping'.format(d.meta['AnonID']+'.zip'))
+            continue
+
         if not noop:
             e = orthanc.anonymize(d, r)
+            e.meta['PatientID'] = d.meta['AnonID']
             logging.debug(d.id)
             logging.debug(e.id)
-        #     orthanc.save(e, save_dir)
-        #     orthanc.delete(e)
-
-    logging.debug(pformat(lexicon))
-    return lexicon
-
+            orthanc.get(e)
+            e.save_archive(save_dir)
+            orthanc.delete(e)
 
 
 if __name__ == "__main__":
@@ -154,7 +192,7 @@ if __name__ == "__main__":
     hounsfield = Orthanc(**secrets['services']['hounsfield+elvo'])
     montage = Montage(**secrets['services']['montage'])
 
-    data_root = "/Users/derek/Desktop/ELVOs"
+    data_root = "/Users/derek/Desktop/ELVO"
 
 
     # 1. Look in Montage for report info/Accession Numbers for positives
@@ -275,9 +313,10 @@ if __name__ == "__main__":
 
         deathstar.get_worklist(worklist_pacs, retrieve=True, lazy=True)
 
-        cirr1.copy_worklist(hounsfield, worklist, lazy=True)
+        # cirr1.copy_worklist(hounsfield, worklist, lazy=True)
         deathstar.copy_worklist(hounsfield, worklist, lazy=True)
 
 
     if ANONYMIZE_AND_SAVE:
-        anonymize_and_save(hounsfield, '/tmp', noop=False)
+        save_dir = os.path.join(data_root, 'anon')
+        anonymize_and_save(hounsfield, data_root, 'worklist+clean.csv', save_dir, noop=False)
