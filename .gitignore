@@ -6,10 +6,13 @@ secret*
 notes*
 ignore*
 *retry
+\_[^\_]*.py
 
 # Binary data #
 ###############
 *.dcm
+.pik
+.pkl
 
 # Compiled source #
 ###################
@@ -52,6 +55,3 @@ tmtagsHistory
 *.sublime-project
 *.sublime-workspace
 .bundle
-
-.pik
-.pkl
