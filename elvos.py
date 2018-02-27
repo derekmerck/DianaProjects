@@ -20,7 +20,7 @@ LOOKUP_SERUIDS     = False
 CLEAN_WORKLIST     = False
 PULL_FROM_PACS     = False
 PUSH_TO_HOUNSFIELD = False
-ANONYMIZE_AND_SAVE = True
+ANONYMIZE_AND_SAVE = False
 
 
 def lookup_accessions(report_db, csv_fn):
@@ -320,3 +320,83 @@ if __name__ == "__main__":
     if ANONYMIZE_AND_SAVE:
         save_dir = os.path.join(data_root, 'anon')
         anonymize_and_save(hounsfield, data_root, 'worklist+clean.csv', save_dir, noop=False)
+
+    def pull_and_anon_normals(orthanc, data_root, wk_csv_fn, save_dir, noop=False):
+
+        worklist, fieldnames = DixelTools.load_csv(os.path.join(data_root, wk_csv_fn))
+        logging.debug(worklist)
+
+        deathstar.get_worklist(worklist, retrieve=True, lazy=True)
+
+        mint = PseudoMint()
+
+        for d in worklist:
+
+            d.level = 'series'
+            if not d.meta['RetrieveAETitle'] == "GEPACS":
+                logging.debug("Removing {}".format(d.meta['Patient Last Name']))
+                worklist_pacs.remove(d)
+
+            continue
+
+            d = orthanc.get(d, retrieve=True, lazy=True)
+
+            logging.debug(pformat(d.meta))
+
+            name = (d.meta["PatientName"]).upper()
+            gender = d.meta['PatientSex']
+
+            if d.meta.get('PatientAge'):
+                age = int(d.meta['PatientAge'][0:3])
+
+                new_id = mint.pseudo_identity(name=name,
+                                              gender=gender,
+                                              age=age)
+
+            elif d.meta.get('PatientBirthDate'):
+                dob = d.meta.get('PatientBirthDate')
+                dob = dob[:4] + '-' + dob[4:6] + '-' + dob[6:]
+                new_id = mint.pseudo_identity(name=name,
+                                              gender=gender,
+                                              dob=dob)
+
+            logging.debug(pformat(new_id))
+
+            d.meta['AnonID'] = new_id[0]
+            d.meta['AnonName'] = new_id[1]
+            d.meta['AnonDoB'] = new_id[2].replace('-', '')
+            d.meta['AnonAccessionNumber'] = md5(d.meta['AccessionNumber']).hexdigest()
+
+            r = {
+                'Remove': ['SeriesNumber'],
+                'Replace': {
+                    'PatientName': d.meta['AnonName'],
+                    'PatientID': d.meta['AnonID'],
+                    'PatientBirthDate': d.meta['AnonDoB'],
+                    'AccessionNumber': d.meta['AnonAccessionNumber']
+                },
+                'Keep': ['PatientSex', 'StudyDescription', 'SeriesDescription'],
+                'Force': True
+            }
+
+            logging.debug(pformat(r))
+
+            if os.path.exists(os.path.join(save_dir, d.meta['AnonID'] + '.zip')):
+                logging.debug('{} already exists -- skipping'.format(d.meta['AnonID'] + '.zip'))
+                continue
+
+            if not noop:
+                e = orthanc.anonymize(d, r)
+                e.meta['PatientID'] = d.meta['AnonID']
+                logging.debug(d.id)
+                logging.debug(e.id)
+                orthanc.get(e)
+                e.save_archive(save_dir)
+                orthanc.delete(e)
+
+
+
+    PULL_AND_ANON_NORMALS=True
+    if PULL_AND_ANON_NORMALS:
+        save_dir = "/Volumes/3dlab/elvo_anon/anon"
+        pull_and_anon_normals(deathstar, data_root, 'worklist+clean.csv', save_dir, noop=True)
