@@ -395,8 +395,111 @@ if __name__ == "__main__":
                 orthanc.delete(e)
 
 
-
-    PULL_AND_ANON_NORMALS=True
+    PULL_AND_ANON_NORMALS=False
     if PULL_AND_ANON_NORMALS:
         save_dir = "/Volumes/3dlab/elvo_anon/anon"
         pull_and_anon_normals(deathstar, data_root, 'worklist+clean.csv', save_dir, noop=True)
+
+
+    mint = PseudoMint()
+    def get_anon_id(d):
+
+        logging.debug(pformat(d.meta))
+
+        name = (d.meta["PatientName"]).upper()
+        gender = d.meta['PatientSex']
+
+        if d.meta.get('PatientAge'):
+            age = int(d.meta['PatientAge'][0:3])
+            new_id = mint.pseudo_identity(name=name,
+                                          gender=gender,
+                                          age=age)
+
+        elif d.meta.get('PatientBirthDate'):
+            dob = d.meta.get('PatientBirthDate')
+            dob = dob[:4] + '-' + dob[4:6] + '-' + dob[6:]
+            new_id = mint.pseudo_identity(name=name,
+                                          gender=gender,
+                                          dob=dob)
+
+        logging.debug(pformat(new_id))
+
+        d.meta['AnonID'] = new_id[0]
+        d.meta['AnonName'] = new_id[1]
+        d.meta['AnonDoB'] = new_id[2].replace('-', '')
+        d.meta['AnonAccessionNumber'] = md5(d.meta['AccessionNumber']).hexdigest()
+        return d
+
+    def anonymization_fn(d):
+
+        if not (d.meta.get('AnonName') and d.meta.get('AnonId') and \
+                d.meta.get('AnonDoB') and d.meta.get('AnonAccessionNumber') ):
+            d = get_anon_id(d)
+
+        r = {
+            'Remove': ['SeriesNumber'],
+            'Replace': {
+                'PatientName': d.meta['AnonName'],
+                'PatientID': d.meta['AnonID'],
+                'PatientBirthDate': d.meta['AnonDoB'],
+                'AccessionNumber': d.meta['AnonAccessionNumber']
+            },
+            'Keep': ['PatientSex', 'StudyDescription', 'SeriesDescription'],
+            'Force': True
+        }
+
+        return r
+
+
+
+    csv_file = os.path.join(data_root, "worklist+clean.csv")
+    worklist, fieldnames = DixelTools.load_csv(csv_file)
+
+    ready_accessions_file = os.path.join(data_root, "ready_positives.txt")
+    with open(ready_accessions_file, 'r') as f:
+        ready_accessions = f.readlines()
+
+    readylist = set()
+
+    for AccessionNumber in ready_accessions:
+        AccessionNumber = AccessionNumber.rstrip()
+        logging.debug("Looking for '{}'".format(AccessionNumber))
+        for d in worklist:
+            # logging.debug("Testing '{}'".format(d.meta['AccessionNumber']))
+            if d.meta['AccessionNumber'] == AccessionNumber:
+                assert(d.meta["ELVO on CTA?"]=="Yes")
+                readylist.add(d)
+                worklist.remove(d)
+                logging.debug("Found pos {}".format(d))
+                break
+
+    matchlist = set()
+
+    for d in readylist:
+        for e in worklist:
+            if d.meta['Age']==e.meta['Age'] and \
+                    d.meta['Gender']==e.meta['Gender'] and \
+                    e.meta["ELVO on CTA?"]=="No":
+                matchlist.add(e)
+                worklist.remove(e)
+                logging.debug("Found neg match {} for {}".format(e, d))
+                break
+
+    logging.debug(len(readylist))
+    logging.debug(len(matchlist))
+
+    # Now we want to do something like lookup all the OIDs for the readylist and figure out
+    # their AnonIDs and write them out to spreadsheet
+
+    for d in readylist:
+        d = deathstar.update(d)  # Need to get DICOM fields
+        d = get_anon_id(d)
+
+    outset = readylist.union(matchlist)
+    csv_file = os.path.join(data_root, "ready.csv")
+    DixelTools.save_csv(csv_file, outset, fieldnames)
+
+    # Then anonymize each of the readies and write their AnonID out to spreadsheet
+
+
+
