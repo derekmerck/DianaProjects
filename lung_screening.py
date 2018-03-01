@@ -1,3 +1,7 @@
+"""
+Extract all possible lung screening registry data from Montage dumps
+"""
+
 import logging
 import yaml
 import os
@@ -15,8 +19,6 @@ def partial_key(d, pk):
 if __name__ == "__main__":
 
     logging.basicConfig(level=logging.DEBUG)
-    with open("secrets.yml", 'r') as f:
-        secrets = yaml.load(f)
 
     # Starting from a montage csv dump of all patients
     # with IMG8119 (lscr) and IMG1997 (lscr f/u)

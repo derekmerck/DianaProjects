@@ -1,4 +1,5 @@
-"""Grand/Laurie Low-Dose Renal Stone Research Protocol
+"""
+Grand/Laurie Low-Dose Renal Stone Research Protocol
 
 Merck, Winter 2018
 
@@ -15,8 +16,6 @@ $ docker run -p 4251:4242 -p 8051:8042 --rm -d -v /tmp/orthanc_uldrs.json:/etc/o
 ```
 
 """
-
-
 
 from DixelKit import DixelTools
 from DixelKit.Dixel import Dixel
