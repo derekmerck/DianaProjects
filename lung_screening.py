@@ -3,12 +3,14 @@ Extract all possible lung screening registry data from Montage dumps
 """
 
 import logging
-import yaml
 import os
-from DixelKit import DixelTools
-from DixelKit.Montage import Montage
 import csv
 from pprint import pformat
+
+from DixelKit import DixelTools
+from Report import Report
+
+DATA_ROOT = "/Users/derek/Projects/lscr"
 
 def partial_key(d, pk):
     for k in d.keys():
@@ -22,8 +24,8 @@ if __name__ == "__main__":
 
     # Starting from a montage csv dump of all patients
     # with IMG8119 (lscr) and IMG1997 (lscr f/u)
-    csv_file = "/Users/derek/Projects/lscr/lscr_both.csv"
-    npi_file = "/Users/derek/Projects/lscr/rad2npi.csv"
+    csv_file = os.path.join(DATA_ROOT, "lscr_both.csv")
+    npi_file = os.path.join(DATA_ROOT, "rad2npi.csv" )
 
     worklist, fieldnames = DixelTools.load_csv(csv_file)
     logging.debug(worklist)
@@ -38,7 +40,10 @@ if __name__ == "__main__":
     logging.debug(pformat(rad2npi))
 
     for d in worklist:
-        d = DixelTools.report_extractions(d)
+
+        r = Report(d.meta['Report Text'])
+
+        r = Report(d)  # Automatically populates d with extractions
         d.meta['oph_last']  = d.meta['Ordered By'].split(', ')[0].capitalize()
         d.meta['oph_first'] = d.meta['Ordered By'].split(', ')[1].capitalize()
 

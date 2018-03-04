@@ -17,34 +17,35 @@ $ docker run -p 4251:4242 -p 8051:8042 --rm -d -v /tmp/orthanc_uldrs.json:/etc/o
 
 """
 
-from DixelKit import DixelTools
-from DixelKit.Dixel import Dixel
-from DixelKit.Orthanc import Orthanc, OrthancProxy
-from GUIDMint.GUIDMint import PseudoMint
-
 from pprint import pformat
 import logging
 import os
 import yaml
 from hashlib import md5
 
+from DixelKit import DixelTools
+from DixelKit.Dixel import Dixel
+from DixelKit.Orthanc import Orthanc, OrthancProxy
+from GUIDMint.GUIDMint import PseudoMint
 
-def lookup_seruids(proxy, series_qs, data_root, csv_fn):
-    """Lookup series UUIDs from PACS"""
+DATA_ROOT = "/Users/derek/Desktop/uldrs"
 
-    csv_in = os.path.join(data_root, csv_fn)
-    worklist, fieldnames = DixelTools.load_csv(csv_in)
 
-    for item in series_qs:
-
-        qdict = item['qdict']
-        worklist = proxy.update_worklist(worklist, qdict=qdict, suffix=item['suffix'])
-
-    csv_out = os.path.splitext(csv_fn)[0]+"+seruids.csv"
-    DixelTools.save_csv(os.path.join(data_root, csv_out), worklist, fieldnames)
-
-    return worklist
-
+# def lookup_seruids(proxy, series_qs, data_root, csv_fn):
+#     """Lookup series UUIDs from PACS"""
+#
+#     csv_in = os.path.join(data_root, csv_fn)
+#     worklist, fieldnames = DixelTools.load_csv(csv_in)
+#
+#     for item in series_qs:
+#
+#         qdict = item['qdict']
+#         worklist = proxy.update_worklist(worklist, qdict=qdict, suffix=item['suffix'])
+#
+#     csv_out = os.path.splitext(csv_fn)[0]+"+seruids.csv"
+#     DixelTools.save_csv(os.path.join(data_root, csv_out), worklist, fieldnames)
+#
+#     return worklist
 
 def series_dixel(d, suffix=""):
 
@@ -143,7 +144,6 @@ if __name__=="__main__":
     deathstar = OrthancProxy(**secrets['services']['deathstar'])
     hounsfield = Orthanc(**secrets['services']['hounsfield+uldrs'])
 
-    data_root = "/Users/derek/Desktop/uldrs"
     csv_fn = "uldrs2.csv"
 
     # Get SERUIDS
@@ -153,11 +153,12 @@ if __name__=="__main__":
         {'qdict': {'SeriesDescription': '*low dose renal*'},
          'suffix': "+uld"}
     ]
-    # lookup_seruids(deathstar, series_qs, data_root, csv_fn)
-
+    DixelTools.lookup_seruids(deathstar, series_qs,
+                              data_root=DATA_ROOT, csv_fn=csv_fn,
+                              save_file=True)
     # Copy from PACS
     csv_fn = "uldrs2+seruids.csv"
-    # copy_from_pacs(deathstar, data_root, csv_fn)
+    # copy_from_pacs(deathstar, DATA_ROOT, csv_fn)
 
     # Copy to Hounsfield
     # deathstar.copy_inventory(hounsfield)

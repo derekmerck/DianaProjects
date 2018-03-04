@@ -51,28 +51,45 @@ def consolidate_worklists(data_root, csv_out):
 
     DixelTools.save_csv(os.path.join(data_root, csv_out), all, keep)
 
-
 def lookup_seruids(data_root, csv_fn):
-
-    csv_in = os.path.join(data_root, csv_fn)
-    worklist, fieldnames = DixelTools.load_csv(csv_in)
 
     deathstar = OrthancProxy(**secrets['services']['deathstar'])
 
-    qdict = {'SeriesDescription': '*STIR*'}
-    worklist = deathstar.update_worklist(worklist, qdict=qdict, suffix='+STIR')
+    series_qs = [
+        {'qdict':  {'SeriesDescription': '*STIR*'},
+         'suffix': '+STIR'},
+        {'qdict':  {'SeriesDescription': '1*MIN*SUB*'},
+         'suffix': '+1MS'},
+        {'qdict':  {'SeriesDescription': '2*MIN*SUB*'},
+         'suffix': '+2MS'},
+        {'qdict':  {'SeriesDescription': '6*MIN*SUB*'},
+         'suffix': '+6MS'}
+    ]
 
-    qdict = {'SeriesDescription': '1*MIN*SUB*'}
-    worklist = deathstar.update_worklist(worklist, qdict=qdict, suffix='+1MS')
+    DixelTools.lookup_seruids(deathstar, series_qs, data_root=data_root, csv_fn=csv_fn, save_file=True)
 
-    qdict = {'SeriesDescription': '2*MIN*SUB*'}
-    worklist = deathstar.update_worklist(worklist, qdict=qdict, suffix='+2MS')
-
-    qdict = {'SeriesDescription': '6*MIN*SUB*'}
-    worklist = deathstar.update_worklist(worklist, qdict=qdict, suffix='+6MS')
-
-    csv_out = os.path.splitext(csv_fn)[0]+"+seruids.csv"
-    DixelTools.save_csv(os.path.join(data_root, csv_out), worklist, fieldnames)
+#
+# def lookup_seruids(data_root, csv_fn):
+#
+#     csv_in = os.path.join(data_root, csv_fn)
+#     worklist, fieldnames = DixelTools.load_csv(csv_in)
+#
+#     deathstar = OrthancProxy(**secrets['services']['deathstar'])
+#
+#     qdict = {'SeriesDescription': '*STIR*'}
+#     worklist = deathstar.update_worklist(worklist, qdict=qdict, suffix='+STIR')
+#
+#     qdict = {'SeriesDescription': '1*MIN*SUB*'}
+#     worklist = deathstar.update_worklist(worklist, qdict=qdict, suffix='+1MS')
+#
+#     qdict = {'SeriesDescription': '2*MIN*SUB*'}
+#     worklist = deathstar.update_worklist(worklist, qdict=qdict, suffix='+2MS')
+#
+#     qdict = {'SeriesDescription': '6*MIN*SUB*'}
+#     worklist = deathstar.update_worklist(worklist, qdict=qdict, suffix='+6MS')
+#
+#     csv_out = os.path.splitext(csv_fn)[0]+"+seruids.csv"
+#     DixelTools.save_csv(os.path.join(data_root, csv_out), worklist, fieldnames)
 
 
 if __name__=="__main__":
