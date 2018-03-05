@@ -426,15 +426,18 @@ if __name__ == "__main__":
 
                 logging.debug('{} doesn\'t exist yet -- working'.format(d.meta['AnonID'] + '.zip'))
 
-                if d.meta.get('RetrieveAETitle')=="GEPACS":
+                if d.meta.get('RetrieveAETitle')=="HOUNSFIELD":
+                    orthanc = hounsfield
+                    if d not in hounsfield.inventory:
+                        logging.warn("Missing patient on Hounsfield {}".format(d))
+                        continue
+
+                elif d.meta.get('RetrieveAETitle')=="GEPACS":
                     orthanc = deathstar
                     orthanc.get(d, retrieve=True, lazy=True)
                     if not d.meta.get('OID'):
                         logging.warn("Can't figure out OID for {}, apparently not retrieved".format(d))
                         continue
-
-                elif d.meta.get('RetrieveAETitle')=="HOUNSFIELD":
-                    orthanc = hounsfield
 
                 else:
                     logging.warn("No AET to parse for {}, skipping".format(d))
