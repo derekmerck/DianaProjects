@@ -210,8 +210,9 @@ def get_anon_id(d):
 
 
 def anonymization_fn(d):
-    if not (d.meta.get('AnonName') and d.meta.get('AnonId') and \
-            d.meta.get('AnonDoB') and d.meta.get('AnonAccessionNumber')):
+    if not (d.meta.get('AnonName') or d.meta.get('AnonId') or \
+            d.meta.get('AnonDoB') or d.meta.get('AnonAccessionNumber')):
+        logging.warn("Passed a dixel w no anonymization key, creating new one")
         d = get_anon_id(d)
 
     r = {
@@ -411,13 +412,19 @@ if __name__ == "__main__":
 
             for d in worklist:
 
-                if not d.meta.get("AnonID"):
+                if not d.meta.get("AnonID") or \
+                        not d.meta.get("AnonDoB") or \
+                        not d.meta.get("AnonAccessionNumber") or \
+                        not d.meta.get("AnonName"):
+                    logging.warn("Incomplete anonymization for {}".format(d))
                     continue
 
                 fp = os.path.join(save_dir, d.meta['AnonID'] + '.zip')
                 if os.path.exists(fp):
-                    logging.debug('{} already exists -- skipping'.format(d.meta['PatientID'] + '.zip'))
+                    logging.debug('{} already exists -- skipping'.format(d.meta['AnonID'] + '.zip'))
                     continue
+
+                logging.debug('{} doesn\'t exist yet -- working'.format(d.meta['AnonID'] + '.zip'))
 
                 if d.meta.get('RetrieveAETitle')=="GEPACS":
                     orthanc = deathstar
