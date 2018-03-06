@@ -350,6 +350,93 @@ if __name__ == "__main__":
     # Also, update csv along the way with anon_ids
     if PULL_FROM_PACS:
 
+        def better_seruids(proxy, data_root, csv_fn):
+
+            csv_file = os.path.join(data_root, csv_fn)
+            worklist, fieldnames = DixelTools.load_csv(csv_file, dicom_level=DicomLevel.SERIES)
+
+            out_file = os.path.join(data_root, "ready_rebuild.csv")
+
+            for d in worklist:
+
+                def approved(series_desc):
+                    desc = series_desc.lower()
+                    return desc.find("thin") >= 0 or \
+                           desc.find("1mm") >= 0
+
+                # Known thin?
+                if approved(d.meta.get("SeriesDescription")):
+                    continue
+
+                # Otherwise need to confirm
+                q = {"StudyInstanceUID": d.meta['StudyInstanceUID']}
+                r = proxy.query(q, level=DicomLevel.SERIES)
+
+                if not r:
+                    logging.warn("Still bad data")
+                    d.meta['rebuild'] = "Review"
+                    continue
+
+                # logging.debug(pformat(r))
+
+                def allowed(series_desc):
+                    desc = series_desc.lower()
+                    return desc.find(' nc ') < 0 and \
+                        desc.find(' sagittal ') < 0 and \
+                        desc.find(' thick ') < 0 and \
+                        desc.find(' mip ') < 0 and \
+                        desc.find(' obl ') < 0
+
+                current_best = None
+                for series in r:
+                    if allowed(series['SeriesDescription']):
+                        current_best = series
+                        break
+
+                for series in r:
+                    if allowed(series['SeriesDescription']) and \
+                        int(int(series['NumberOfSeriesRelatedInstances'])) > int(current_best['NumberOfSeriesRelatedInstances']):
+                        # logging.warn('{} ({}) is better than {} for {} ({})'.format(
+                        #     series['SeriesDescription'],
+                        #     series['NumberOfSeriesRelatedInstances'],
+                        #     current_best['SeriesDescription'],
+                        #     current_best['NumberOfSeriesRelatedInstances'],
+                        #     current_best['AccessionNumber']))
+                        current_best = series
+                    # else:
+                    #     logging.warn('{} ({}) is NOT better than {} ({}) for {}'.format(
+                    #         series['SeriesDescription'],
+                    #         series['NumberOfSeriesRelatedInstances'],
+                    #         current_best['SeriesDescription'],
+                    #         current_best['NumberOfSeriesRelatedInstances'],
+                    #         current_best['AccessionNumber']))
+
+                if d.meta['SeriesInstanceUID'] != current_best['SeriesInstanceUID']:
+                    logging.warn('{} ({}) is better than {} for {}'.format(
+                        current_best['SeriesDescription'],
+                        current_best['NumberOfSeriesRelatedInstances'],
+                        d.meta['SeriesDescription'],
+                        d.meta['AccessionNumber']))
+                    logging.warn("Flagging rebuild!")
+                    d.meta['SeriesInstanceUID'] = current_best['SeriesInstanceUID']
+                    d.meta['SeriesDescription'] = current_best['SeriesDescription']
+                    d.meta['rebuild'] = True
+
+                    DixelTools.save_csv(out_file, worklist, fieldnames)
+
+                else:
+                    logging.debug("{} ({}) is best series".format(current_best['SeriesDescription'],
+                        current_best['NumberOfSeriesRelatedInstances']))
+                    d.meta['rebuild'] = False
+
+
+        # better_seruids(deathstar, data_root, "ready_w_anon_plus.csv")
+
+
+
+
+
+
         # Check existing lists for approvals
 
         # csv_fn = "worklist+clean.csv"
@@ -432,7 +519,7 @@ if __name__ == "__main__":
         # get_anon_ids(hounsfield, data_root, "ready_w_anon.csv")
         # get_anon_ids(deathstar, data_root, "ready_w_anon_plus.csv", "ready_w_anon_plus.csv")
 
-        def anonymize_and_save(data_root, csv_fn, save_dir, keep_anon=True):
+        def anonymize_and_save(data_root, csv_fn, save_dir, keep_anon=True, force_rebuild=False):
 
             csv_file = os.path.join(data_root, csv_fn)
             worklist, fieldnames = DixelTools.load_csv(
@@ -448,7 +535,7 @@ if __name__ == "__main__":
                     continue
 
                 fp = os.path.join(save_dir, d.meta['AnonID'] + '.zip')
-                if os.path.exists(fp):
+                if os.path.exists(fp) and not (force_rebuild and d.meta.get('rebuild')):
                     logging.debug('{} already exists -- skipping'.format(d.meta['AnonID'] + '.zip'))
                     continue
 
@@ -479,9 +566,10 @@ if __name__ == "__main__":
                 if not keep_anon:
                     orthanc.delete(e)
 
-        anonymize_and_save(data_root, "ready_w_anon_plus.csv",
+        anonymize_and_save(data_root, "ready_rebuild.csv",
                            os.path.join(storage_root, "anon"),
-                           keep_anon=True)
+                           keep_anon=False,
+                           force_rebuild=True)
 
 
         def make_meta(data_root, csv_fn, key_fn, meta_fn):
@@ -499,6 +587,16 @@ if __name__ == "__main__":
                     if item.get("AnonID"):
                         items_.append(item)
 
+                junk = []
+                for item in items_:
+                    desc = item.get("SeriesDescription")
+                    if (desc.find("thin") >= 0 or desc.find("1mm") >= 0) and \
+                       desc.find("sagittal") < 0:
+                        continue
+                    junk.append(item)
+
+
+
                 key_fields = [
                     "AccessionNumber",
                     "PatientID",
@@ -506,7 +604,9 @@ if __name__ == "__main__":
                     "PatientBirthDate"
                     "RetrieveAETitle",
                     "StudyInstanceUID",
+                    "StudyDescription",
                     "SeriesInstanceUID",
+                    "SeriesDescription",
                     "PatientBirthDate",
                     "AnonAccessionNumber",
                     "AnonID",
@@ -515,6 +615,14 @@ if __name__ == "__main__":
                     "ELVO on CTA?",
                     "Gender"
                 ]
+
+                with open(os.path.join(data_root, "junk.csv"), "w") as o:
+                    writer = csv.DictWriter(o, key_fields, extrasaction="ignore")
+                    writer.writeheader()
+                    writer.writerows(junk)
+
+                exit()
+
 
                 with open(key_file, "w") as o:
                     writer = csv.DictWriter(o, key_fields, extrasaction="ignore")
