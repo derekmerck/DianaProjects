@@ -13,6 +13,7 @@ from DixelKit import DixelTools
 from DixelKit.Montage import Montage
 from DixelKit.Orthanc import Orthanc, OrthancProxy
 from GUIDMint import PseudoMint
+from DianaConnect.check_index import check_index
 
 LOOKUP_POS_ANS     = False
 MATCH_NORMALS      = False
@@ -357,6 +358,33 @@ if __name__ == "__main__":
 
         # Merge w alternate normals
 
+
+        def lookup_missing_dobs(index, data_root, csv_fn):
+
+            csv_file = os.path.join(data_root, csv_fn)
+            worklist, fieldnames = DixelTools.load_csv(csv_file, dicom_level=DicomLevel.SERIES)
+
+            for d in worklist:
+
+                if not d.meta.get('PatientBirthDate'):
+                    q = """search index=dicom_series AccessionNumber="{}" | dedup AccessionNumber | fields AccessionNumber PatientID PatientBirthDate | fields - _*""".format(d.meta.get('AccessionNumber'))
+                    r = check_index(index, q)
+                    if r:
+                        d.meta.update(r[0])
+                    if d.meta.get("PatientBirthDate") is None:
+                        logging.warn("Still missing birth date!")
+
+            csv_file = os.path.join(data_root, "ready_w_anon_plus.csv")
+            DixelTools.save_csv(csv_file, worklist, fieldnames)
+
+
+        # from Splunk import Splunk
+        # splunk = Splunk(**secrets['services']['splunk'])
+        # csv_fn = "ready_w_anon.csv"
+        # lookup_missing_dobs(splunk, data_root, csv_fn)
+
+
+
         def get_anon_ids(orthanc, data_root, csv_fn, anon_fn):
 
             csv_file = os.path.join(data_root, csv_fn)
@@ -402,7 +430,7 @@ if __name__ == "__main__":
             logging.debug("Missing {} dixel series.".format(len(ready)))
 
         # get_anon_ids(hounsfield, data_root, "ready_w_anon.csv")
-        # get_anon_ids(deathstar, data_root, "ready_w_anon.csv", "ready_w_anon.csv")
+        # get_anon_ids(deathstar, data_root, "ready_w_anon_plus.csv", "ready_w_anon_plus.csv")
 
         def anonymize_and_save(data_root, csv_fn, save_dir, keep_anon=True):
 
@@ -428,7 +456,7 @@ if __name__ == "__main__":
 
                 if d.meta.get('RetrieveAETitle')=="HOUNSFIELD":
                     orthanc = hounsfield
-                    if d not in hounsfield.inventory:
+                    if d not in hounsfield.series:
                         logging.warn("Missing patient on Hounsfield {}".format(d))
                         continue
 
@@ -451,9 +479,78 @@ if __name__ == "__main__":
                 if not keep_anon:
                     orthanc.delete(e)
 
-        anonymize_and_save(data_root, "ready_w_anon.csv",
+        anonymize_and_save(data_root, "ready_w_anon_plus.csv",
                            os.path.join(storage_root, "anon"),
                            keep_anon=True)
+
+
+        def make_meta(data_root, csv_fn, key_fn, meta_fn):
+
+            import csv
+            csv_file = os.path.join( data_root, csv_fn )
+            key_file = os.path.join( data_root, key_fn )
+            meta_file = os.path.join( data_root, meta_fn )
+
+            with open(csv_file, "r") as f:
+                items = csv.DictReader(f)
+
+                items_ = []
+                for item in items:
+                    if item.get("AnonID"):
+                        items_.append(item)
+
+                key_fields = [
+                    "AccessionNumber",
+                    "PatientID",
+                    "PatientName",
+                    "PatientBirthDate"
+                    "RetrieveAETitle",
+                    "StudyInstanceUID",
+                    "SeriesInstanceUID",
+                    "PatientBirthDate",
+                    "AnonAccessionNumber",
+                    "AnonID",
+                    "AnonName",
+                    "AnonDoB",
+                    "ELVO on CTA?",
+                    "Gender"
+                ]
+
+                with open(key_file, "w") as o:
+                    writer = csv.DictWriter(o, key_fields, extrasaction="ignore")
+                    writer.writeheader()
+                    writer.writerows(items_)
+
+                meta_map = {
+                    "AnonAccessionNumber": "AccessionNumber",
+                    "AnonID": "PatientID",
+                    "AnonName": "PatientName",
+                    "AnonDoB": "PatientBirthDate",
+                    "ELVO on CTA?": "ELVO status",
+                    "Gender": "PatientSex"
+                }
+
+                meta_fields = [
+                    "AccessionNumber",
+                    "PatientID",
+                    "PatientName",
+                    "PatientBirthDate",
+                    "ELVO status",
+                    "PatientSex"
+                ]
+
+                for item in items_:
+                    for k,v in meta_map.iteritems():
+                        item[v] = item[k]
+
+                with open(meta_file, "w") as o:
+                    writer = csv.DictWriter(o, meta_fields, extrasaction="ignore")
+                    writer.writeheader()
+                    writer.writerows(items_)
+
+
+        make_meta(data_root, "ready_w_anon_plus.csv", "elvos_key_drop1.csv", "elvos_meta_drop1.csv")
+
 
     # Create readylists...
     #
