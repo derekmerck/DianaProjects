@@ -361,8 +361,13 @@ if __name__ == "__main__":
 
                 def approved(series_desc):
                     desc = series_desc.lower()
-                    return desc.find("thin") >= 0 or \
-                           desc.find("1mm") >= 0
+
+                    # blast!
+                    return desc.find("sagital") < 0
+                    # return (desc.find("thin") >= 0 or \
+                    #        desc.find("1mm") >= 0) and \
+                    #        not ( desc.find("sagittal") >= 0 or \
+                    #              desc.find("coronal") >= 0 )
 
                 # Known thin?
                 if approved(d.meta.get("SeriesDescription")):
@@ -381,11 +386,12 @@ if __name__ == "__main__":
 
                 def allowed(series_desc):
                     desc = series_desc.lower()
-                    return desc.find(' nc ') < 0 and \
-                        desc.find(' sagittal ') < 0 and \
-                        desc.find(' thick ') < 0 and \
-                        desc.find(' mip ') < 0 and \
-                        desc.find(' obl ') < 0
+                    return desc.find('nc') < 0 and \
+                        desc.find('sagittal') < 0 and \
+                        desc.find('sagital') < 0 and \
+                        desc.find('thick') < 0 and \
+                        desc.find('mip') < 0 and \
+                        desc.find('obl') < 0
 
                 current_best = None
                 for series in r:
@@ -430,7 +436,7 @@ if __name__ == "__main__":
                     d.meta['rebuild'] = False
 
 
-        # better_seruids(deathstar, data_root, "ready_w_anon_plus.csv")
+        # better_seruids(deathstar, data_root, "ready_rebuild.csv")
 
 
 
@@ -566,10 +572,10 @@ if __name__ == "__main__":
                 if not keep_anon:
                     orthanc.delete(e)
 
-        anonymize_and_save(data_root, "ready_rebuild.csv",
-                           os.path.join(storage_root, "anon"),
-                           keep_anon=False,
-                           force_rebuild=True)
+        # anonymize_and_save(data_root, "ready_rebuild.csv",
+        #                    os.path.join(storage_root, "anon"),
+        #                    keep_anon=False,
+        #                    force_rebuild=True)
 
 
         def make_meta(data_root, csv_fn, key_fn, meta_fn):
@@ -586,16 +592,6 @@ if __name__ == "__main__":
                 for item in items:
                     if item.get("AnonID"):
                         items_.append(item)
-
-                junk = []
-                for item in items_:
-                    desc = item.get("SeriesDescription")
-                    if (desc.find("thin") >= 0 or desc.find("1mm") >= 0) and \
-                       desc.find("sagittal") < 0:
-                        continue
-                    junk.append(item)
-
-
 
                 key_fields = [
                     "AccessionNumber",
@@ -616,14 +612,6 @@ if __name__ == "__main__":
                     "Gender"
                 ]
 
-                with open(os.path.join(data_root, "junk.csv"), "w") as o:
-                    writer = csv.DictWriter(o, key_fields, extrasaction="ignore")
-                    writer.writeheader()
-                    writer.writerows(junk)
-
-                exit()
-
-
                 with open(key_file, "w") as o:
                     writer = csv.DictWriter(o, key_fields, extrasaction="ignore")
                     writer.writeheader()
@@ -635,7 +623,7 @@ if __name__ == "__main__":
                     "AnonName": "PatientName",
                     "AnonDoB": "PatientBirthDate",
                     "ELVO on CTA?": "ELVO status",
-                    "Gender": "PatientSex"
+                    "Gender": "PatientSex",
                 }
 
                 meta_fields = [
@@ -644,7 +632,8 @@ if __name__ == "__main__":
                     "PatientName",
                     "PatientBirthDate",
                     "ELVO status",
-                    "PatientSex"
+                    "PatientSex",
+                    "SeriesDescription"
                 ]
 
                 for item in items_:
@@ -657,7 +646,7 @@ if __name__ == "__main__":
                     writer.writerows(items_)
 
 
-        make_meta(data_root, "ready_w_anon_plus.csv", "elvos_key_drop1.csv", "elvos_meta_drop1.csv")
+        make_meta(data_root, "ready_rebuild.csv", "elvos_key_drop1.csv", "elvos_meta_drop1.csv")
 
 
     # Create readylists...
