@@ -24,115 +24,122 @@ import yaml
 from hashlib import md5
 
 from DixelKit import DixelTools
-from DixelKit.Dixel import Dixel
+from DixelKit.Dixel import Dixel, DicomLevel
 from DixelKit.Orthanc import Orthanc, OrthancProxy
 from GUIDMint.GUIDMint import PseudoMint
+from DixelKit.DixelReader import DixelReader, MetaTranslator
 
-DATA_ROOT = "/Users/derek/Desktop/uldrs"
+data_root = "/Users/derek/Projects/Body/CT Ultralow Dose Renal Stone"
+csv_fn = "uldrs3.csv"
 
-
-# def lookup_seruids(proxy, series_qs, data_root, csv_fn):
-#     """Lookup series UUIDs from PACS"""
-#
-#     csv_in = os.path.join(data_root, csv_fn)
-#     worklist, fieldnames = DixelTools.load_csv(csv_in)
-#
-#     for item in series_qs:
-#
-#         qdict = item['qdict']
-#         worklist = proxy.update_worklist(worklist, qdict=qdict, suffix=item['suffix'])
-#
-#     csv_out = os.path.splitext(csv_fn)[0]+"+seruids.csv"
-#     DixelTools.save_csv(os.path.join(data_root, csv_out), worklist, fieldnames)
-#
-#     return worklist
-
-def series_dixel(d, suffix=""):
-
-    meta1 = {}
-    meta1['PatientID']         = d.meta['PatientID']
-    meta1['AccessionNumber']   = d.meta['AccessionNumber'+suffix]
-    meta1['StudyInstanceUID']  = d.meta['StudyInstanceUID'+suffix]
-    meta1['SeriesInstanceUID'] = d.meta['SeriesInstanceUID'+suffix]
-    meta1['OID'] = DixelTools.orthanc_id(meta1['PatientID'],
-                                         meta1['StudyInstanceUID'],
-                                         meta1['SeriesInstanceUID'])
-    logging.debug(meta1['OID'])
-    return Dixel(id=meta1['OID'], meta=meta1, level='series')
+def anon_fn(d):
+    return {
+        'Remove': ['SeriesNumber'],
+        'Replace': {
+            'PatientName': d.meta['AnonName'],
+            'PatientID': d.meta['AnonID'],
+            'PatientBirthDate': d.meta['AnonDoB'].replace('-', ''),
+            'AccessionNumber': md5(d.meta['AccessionNumber']).hexdigest(),
+            'StudyDescription': "Ultra-Low Dose Renal Stone Research",
+            'SeriesDescription': "Blinded Series"
+        },
+        'Keep': ['PatientSex'],
+        'Force': True
+    }
 
 
-def copy_from_pacs(proxy, data_root, csv_fn ):
-    csv_in = os.path.join(data_root, csv_fn)
-    worklist_, _ = DixelTools.load_csv(csv_in)
+def anonymize(data_root, csv_fn):
 
-    worklist = set()
-
-    # Split studies with multiple series
-    for d in worklist_:
-        d0 = series_dixel(d, suffix="+uld")
-        d1 = series_dixel(d, suffix="+rs")
-        worklist.add(d0)
-        worklist.add(d1)
-
-    logging.debug(worklist)
-
-    proxy.get_worklist(worklist, retrieve=True, lazy=True)
-
-
-def anonymize_and_delete(orthanc, noop=False):
-    """Use a PseudoMint to anonymize DICOM metadata and delete source"""
-
-    logging.debug(orthanc.series)
     mint = PseudoMint()
-    lexicon = {}
+    worklist, fieldnames = DixelTools.load_csv(os.path.join(data_root, csv_fn), dicom_level=DicomLevel.SERIES)
 
-    for d in orthanc.series:
+    for d in worklist:
 
-        d = orthanc.update(d)
+        if "uldrs" in d.meta['tags']:
+            study_type = "uldrs"
+            age_offset = int(d.meta['AccessionNumber'][-3:-2])/2
+        elif "ncrs" in d.meta['tags']:
+            study_type = "ncrs"
+            age_offset = -int(d.meta['AccessionNumber'][-2:-1])/2
+        else:
+            logging.warn("No study type tag!")
+            study_type = 'None'
 
-        # # Delete anonymized data
-        # if d.meta.get('Anonymized'):
-        #     hounsfield.delete(d)
-        #     continue
+        name = d.meta["AccessionNumber"] + study_type
+        gender = d.meta.get('PatientSex')
 
-        # logging.debug(pformat(d.meta))
+        from dateutil.relativedelta import relativedelta
+        from datetime import date, datetime, timedelta
+        import time
 
-        name = d.meta["PatientName"] + d.meta['SeriesNumber']
-        gender = d.meta['PatientSex']
-        age = int(d.meta['PatientAge'][0:3]) + int(d.meta['SeriesNumber'])
+        def calculate_age(born):
+            today = date.today()
+            return today.year - born.year - ((today.month, today.day) < (born.month, born.day))
+
+        dob = datetime( *time.strptime(d.meta['PatientBirthDate'], "%Y%m%d")[0:6] )
+        age = calculate_age(dob + relativedelta(months=age_offset) )
 
         new_id = mint.pseudo_identity(name=name,
                                       gender=gender,
                                       age=age)
 
-        logging.debug(pformat(new_id))
+        d.meta['AnonID']   = new_id[0]
+        d.meta['AnonName'] = new_id[1]
+        d.meta['AnonDoB']  = new_id[2]
+        d.meta['AnonAge']  = age
 
-        if d.meta['PatientName'] not in lexicon.keys():
-            lexicon[d.meta['PatientName']] = {}
-        lexicon[d.meta['PatientName']][d.meta['SeriesDescription']] = new_id
+    csv_out = '{}+anon{}'.format(os.path.splitext(csv_fn)[0], os.path.splitext(csv_fn)[1])
+    DixelTools.save_csv(os.path.join(data_root, csv_out), worklist, fieldnames)
 
-        r = {
-            'Remove': ['SeriesNumber'],
-            'Replace': {
-                'PatientName': new_id[1],
-                'PatientID': new_id[0],
-                'PatientBirthDate': new_id[2].replace('-', ''),
-                'AccessionNumber': md5(d.meta['AccessionNumber']).hexdigest(),
-                'StudyDescription': "Ultra-Low Dose Renal Stone Research",
-                'SeriesDescription': "Blinded Series"
-            },
-            'Keep': ['PatientSex'],
-            'Force': True
-        }
 
-        # logging.debug(pformat(r))
+def copy_from_pacs(proxy, data_root, csv_fn,
+                   dest=None, anon_fn=anon_fn,
+                   keep_anon=False):
 
-        if not noop:
-            orthanc.anonymize(d, r)
-            orthanc.delete(d)
+    csv_file = os.path.join(data_root, csv_fn)
+    worklist, fieldnames = DixelTools.load_csv(csv_file, dicom_level=DicomLevel.SERIES)
 
-    logging.debug(pformat(lexicon))
-    return lexicon
+    for d in worklist:
+
+        if not d.meta.get("AnonID") or \
+                not d.meta.get("AnonDoB") or \
+                not d.meta.get("AnonAccessionNumber") or \
+                not d.meta.get("AnonName"):
+            logging.warn("Incomplete anonymization for {}".format(d))
+            continue
+
+        # fp = os.path.join(save_dir, d.meta['AnonID'] + '.zip')
+        # if os.path.exists(fp) and not (force_rebuild and d.meta.get('rebuild')):
+        #     logging.debug('{} already exists -- skipping'.format(d.meta['AnonID'] + '.zip'))
+        #     continue
+
+        logging.debug('{} doesn\'t exist yet -- working'.format(d.meta['AnonID'] + '.zip'))
+
+        if d.meta.get('RetrieveAETitle') == "HOUNSFIELD":
+            orthanc = hounsfield
+            if d not in hounsfield.series:
+                logging.warn("Missing patient on Hounsfield {}".format(d))
+                continue
+
+        elif d.meta.get('RetrieveAETitle') == "GEPACS":
+            orthanc = deathstar
+            orthanc.get(d, retrieve=True, lazy=True)
+            if not d.meta.get('OID'):
+                logging.warn("Can't figure out OID for {}, apparently not retrieved".format(d))
+                continue
+
+        else:
+            logging.warn("No AET to parse for {}, skipping".format(d))
+            continue
+
+        d = orthanc.get(d, retrieve=True, lazy=True)
+        e = orthanc.anonymize(d, anon_fn(d))
+        e = orthanc.update(e)
+        orthanc.copy(e, dest)
+
+        if not keep_anon:
+            orthanc.delete(e)
+
 
 
 if __name__=="__main__":
@@ -144,27 +151,34 @@ if __name__=="__main__":
     deathstar = OrthancProxy(**secrets['services']['deathstar'])
     hounsfield = Orthanc(**secrets['services']['hounsfield+uldrs'])
 
-    csv_fn = "uldrs2.csv"
+    reader = DixelReader(os.path.join(data_root, csv_fn))
+    tmp = reader.read_csv1()
+
+    worklist = set()
+    for w in tmp:
+        m = MetaTranslator.translate_meta(w)
+        d = Dixel(id=''.join(m['id']), meta=m, level=DicomLevel.SERIES)
+        worklist.add(d)
+        # logging.debug(d.meta)
 
     # Get SERUIDS
-    series_qs = [
-        {'qdict': {'SeriesDescription': 'nc*renal stone'},
-         'suffix': "+rs"},
-        {'qdict': {'SeriesDescription': '*low dose renal*'},
-         'suffix': "+uld"}
-    ]
+    series_qs = [{'qdict': {'SeriesInstanceUID': ''}}]
     DixelTools.lookup_seruids(deathstar, series_qs,
-                              data_root=DATA_ROOT, csv_fn=csv_fn,
+                              worklist=worklist,
+                              data_root=data_root, csv_fn=csv_fn,
                               save_file=True)
-    # Copy from PACS
-    csv_fn = "uldrs2+seruids.csv"
-    # copy_from_pacs(deathstar, DATA_ROOT, csv_fn)
 
-    # Copy to Hounsfield
-    # deathstar.copy_inventory(hounsfield)
+    # Create Anon tags
+    csv_fn = "uldrs3+seruids.csv"
+    anonymize(data_root, csv_fn)
 
-    # Anonymize and delete source
-    lexicon = anonymize_and_delete(hounsfield, noop=True)
+    # Copy to PACS
+    csv_fn = "uldrs3+seruids+anon.csv"
+    copy_from_pacs(deathstar, data_root, csv_fn,
+                   dest=hounsfield, anon_fn=anon_fn)
 
-    # Do something with the lexicon...
+    # Create key
+    csv_fn = "uldrs3+seruids+anon.csv"
+    # create_metadata(data_root, csv_fn)
+
 
