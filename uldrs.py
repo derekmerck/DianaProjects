@@ -43,7 +43,7 @@ def anon_fn(d):
             'StudyDescription': "Ultra-Low Dose Renal Stone Research",
             'SeriesDescription': "Blinded Series"
         },
-        'Keep': ['PatientSex'],
+        'Keep': ['PatientSex', 'StudyInstanceUID', 'SeriesInstanceUID', 'SOPInstanceUID'],
         'Force': True
     }
 
@@ -103,42 +103,30 @@ def copy_from_pacs(proxy, data_root, csv_fn,
 
         if not d.meta.get("AnonID") or \
                 not d.meta.get("AnonDoB") or \
-                not d.meta.get("AnonAccessionNumber") or \
                 not d.meta.get("AnonName"):
             logging.warn("Incomplete anonymization for {}".format(d))
             continue
 
-        # fp = os.path.join(save_dir, d.meta['AnonID'] + '.zip')
-        # if os.path.exists(fp) and not (force_rebuild and d.meta.get('rebuild')):
-        #     logging.debug('{} already exists -- skipping'.format(d.meta['AnonID'] + '.zip'))
-        #     continue
+        e_ = Dixel(id=d.meta.get('AnonOID'), level=DicomLevel.SERIES)
+        if e_ not in dest.series:
+            logging.warn("Missing patient {} on HOUNSFIELD -- Pulling on DEATHSTAR".format(d))
 
-        logging.debug('{} doesn\'t exist yet -- working'.format(d.meta['AnonID'] + '.zip'))
-
-        if d.meta.get('RetrieveAETitle') == "HOUNSFIELD":
-            orthanc = hounsfield
-            if d not in hounsfield.series:
-                logging.warn("Missing patient on Hounsfield {}".format(d))
-                continue
-
-        elif d.meta.get('RetrieveAETitle') == "GEPACS":
-            orthanc = deathstar
-            orthanc.get(d, retrieve=True, lazy=True)
+            proxy.get(d, retrieve=True, lazy=True)
             if not d.meta.get('OID'):
                 logging.warn("Can't figure out OID for {}, apparently not retrieved".format(d))
-                continue
 
-        else:
-            logging.warn("No AET to parse for {}, skipping".format(d))
-            continue
+            e = proxy.anonymize(d, anon_fn(d))
+            e = proxy.update(e)
+            logging.debug(pformat(e.meta))
+            d.meta['AnonOID'] = e.id
 
-        d = orthanc.get(d, retrieve=True, lazy=True)
-        e = orthanc.anonymize(d, anon_fn(d))
-        e = orthanc.update(e)
-        orthanc.copy(e, dest)
+            csv_out = '{}+incr{}'.format(os.path.splitext(csv_fn)[0], os.path.splitext(csv_fn)[1])
+            DixelTools.save_csv(os.path.join(data_root, csv_out), worklist, fieldnames)
+
+            proxy.copy(e, dest)
 
         if not keep_anon:
-            orthanc.delete(e)
+            proxy.delete(e)
 
 
 
@@ -151,34 +139,71 @@ if __name__=="__main__":
     deathstar = OrthancProxy(**secrets['services']['deathstar'])
     hounsfield = Orthanc(**secrets['services']['hounsfield+uldrs'])
 
-    reader = DixelReader(os.path.join(data_root, csv_fn))
-    tmp = reader.read_csv1()
+    # reader = DixelReader(os.path.join(data_root, csv_fn))
+    # tmp = reader.read_csv1()
+    #
+    # worklist = set()
+    # for w in tmp:
+    #     m = MetaTranslator.translate_meta(w)
+    #     d = Dixel(id=''.join(m['id']), meta=m, level=DicomLevel.SERIES)
+    #     worklist.add(d)
+    #     # logging.debug(d.meta)
+    #
+    # # Get SERUIDS
+    # series_qs = [{'qdict': {'SeriesInstanceUID': ''}}]
+    # DixelTools.lookup_seruids(deathstar, series_qs,
+    #                           worklist=worklist,
+    #                           data_root=data_root, csv_fn=csv_fn,
+    #                           save_file=True)
+    #
+    # # Create Anon tags
+    # csv_fn = "uldrs3+seruids.csv"
+    # anonymize(data_root, csv_fn)
+    #
+    # # Copy to PACS
+    # csv_fn = "uldrs3+seruids+anon.csv"
+    # copy_from_pacs(deathstar, data_root, csv_fn,
+    #                dest=hounsfield, anon_fn=anon_fn)
 
-    worklist = set()
-    for w in tmp:
-        m = MetaTranslator.translate_meta(w)
-        d = Dixel(id=''.join(m['id']), meta=m, level=DicomLevel.SERIES)
-        worklist.add(d)
-        # logging.debug(d.meta)
 
-    # Get SERUIDS
-    series_qs = [{'qdict': {'SeriesInstanceUID': ''}}]
-    DixelTools.lookup_seruids(deathstar, series_qs,
-                              worklist=worklist,
-                              data_root=data_root, csv_fn=csv_fn,
-                              save_file=True)
+    import itertools
+    def create_metadata(data_root, csv_fn):
+        csv_file = os.path.join(data_root, csv_fn)
+        worklist, fieldnames = DixelTools.load_csv(csv_file, dicom_level=DicomLevel.SERIES)
 
-    # Create Anon tags
-    csv_fn = "uldrs3+seruids.csv"
-    anonymize(data_root, csv_fn)
+        fieldnames = [ 'PatientID', 'PatientName', 'PatientBirthDate',
+                       'AnonID', 'AnonName', 'AnonAge', 'AnonDoB', 'PatientSex' ]
 
-    # Copy to PACS
-    csv_fn = "uldrs3+seruids+anon.csv"
-    copy_from_pacs(deathstar, data_root, csv_fn,
-                   dest=hounsfield, anon_fn=anon_fn)
+        def keyfunc(v):
+            return [v.meta[k] for k in fieldnames]
+        groups = []
+        worklist_ = sorted(list(worklist), key=keyfunc)
+        for k, g in itertools.groupby(worklist_, keyfunc):
+            groups.append(list(g))      # Store group iterator as a list
+
+        logging.debug(groups)
+
+        worklist = set()
+        for g in groups:
+            worklist.add(g[0])
+
+
+        csv_out = '{}+key{}'.format(os.path.splitext(csv_fn)[0], os.path.splitext(csv_fn)[1])
+        DixelTools.save_csv(os.path.join(data_root, csv_out), worklist, fieldnames, extras=False)
+
+        for d in worklist:
+            d.meta['PatientID'] = d.meta['AnonID']
+            d.meta['PatientName'] = d.meta['AnonName']
+            d.meta['PatientDoB'] = d.meta['AnonDoB']
+            d.meta['PatientAge'] = d.meta['AnonAge']
+
+        fieldnames = [ 'PatientID', 'PatientName', 'PatientBirthDate','PatientSex' ]
+
+        csv_out = '{}+info{}'.format(os.path.splitext(csv_fn)[0], os.path.splitext(csv_fn)[1])
+        DixelTools.save_csv(os.path.join(data_root, csv_out), worklist, fieldnames, extras=False)
 
     # Create key
     csv_fn = "uldrs3+seruids+anon.csv"
-    # create_metadata(data_root, csv_fn)
+    create_metadata(data_root, csv_fn)
 
 
