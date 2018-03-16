@@ -3,18 +3,14 @@ Grand/Laurie Low-Dose Renal Stone Research Protocol
 
 Merck, Winter 2018
 
-1. Start w accession nums/mrns from Montage
-2. Lookup seruids for each study type
-3. Copy series from the PACS to the proxy (deathstar)
-4. Copy series from the proxy (deathstar) to the archive (hounsfield)
-5. Anonymize each series and delete the original
+20 subjects with paired "low dose renal stone" and "ultra-low dose renal stone" protocols
+42 individual CT series, each subject _split_ into 2 pseudo-ids
 
-## Create a docker repo on Hounsfield
+## Create a docker Osimis Viewer repo on Hounsfield
 
 ```bash
 $ docker run -p 4251:4242 -p 8051:8042 --rm -d -v /tmp/orthanc_uldrs.json:/etc/orthanc/orthanc.json:ro --name uldrs osimis/orthanc --env WVP_ALPHA_ENABLED=true
 ```
-
 """
 
 from pprint import pformat
@@ -139,31 +135,31 @@ if __name__=="__main__":
     deathstar = OrthancProxy(**secrets['services']['deathstar'])
     hounsfield = Orthanc(**secrets['services']['hounsfield+uldrs'])
 
-    # reader = DixelReader(os.path.join(data_root, csv_fn))
-    # tmp = reader.read_csv1()
-    #
-    # worklist = set()
-    # for w in tmp:
-    #     m = MetaTranslator.translate_meta(w)
-    #     d = Dixel(id=''.join(m['id']), meta=m, level=DicomLevel.SERIES)
-    #     worklist.add(d)
-    #     # logging.debug(d.meta)
-    #
-    # # Get SERUIDS
-    # series_qs = [{'qdict': {'SeriesInstanceUID': ''}}]
-    # DixelTools.lookup_seruids(deathstar, series_qs,
-    #                           worklist=worklist,
-    #                           data_root=data_root, csv_fn=csv_fn,
-    #                           save_file=True)
-    #
-    # # Create Anon tags
-    # csv_fn = "uldrs3+seruids.csv"
-    # anonymize(data_root, csv_fn)
-    #
-    # # Copy to PACS
-    # csv_fn = "uldrs3+seruids+anon.csv"
-    # copy_from_pacs(deathstar, data_root, csv_fn,
-    #                dest=hounsfield, anon_fn=anon_fn)
+    reader = DixelReader(os.path.join(data_root, csv_fn))
+    tmp = reader.read_csv2()
+
+    worklist = set()
+    for w in tmp:
+        m = MetaTranslator.translate_meta(w)
+        d = Dixel(id=''.join(m['id']), meta=m, level=DicomLevel.SERIES)
+        worklist.add(d)
+        # logging.debug(d.meta)
+
+    # Get SERUIDS
+    series_qs = [{'qdict': {'SeriesInstanceUID': ''}}]
+    DixelTools.lookup_seruids(deathstar, series_qs,
+                              worklist=worklist,
+                              data_root=data_root, csv_fn=csv_fn,
+                              save_file=True)
+
+    # Create Anon tags
+    csv_fn = "uldrs3+seruids.csv"
+    anonymize(data_root, csv_fn)
+
+    # Copy from PACS
+    csv_fn = "uldrs3+seruids+anon.csv"
+    copy_from_pacs(deathstar, data_root, csv_fn,
+                   dest=hounsfield, anon_fn=anon_fn)
 
 
     import itertools
