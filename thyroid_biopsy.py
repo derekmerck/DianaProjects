@@ -27,14 +27,14 @@ from pprint import pformat
 
 # Script variables and section activation
 data_root = "/Users/derek/Projects/Ultrasound/Thyroid Biopsy/data"
-save_dir = "/Users/derek/Desktop/thyroid_anon"
+save_dir = "/Volumes/3dlab/thyroid_biopsy/anon"
 remote_aet = "gepacs"
 
 INIT_REDIS_CACHE     = False
 LOOKUP_STUIDS        = False
 CREATE_ANON_IDS      = False
 COPY_FROM_PACS       = True
-CLEAN_PROXY          = False
+CLEAN_PROXY          = True
 BUILD_CSV_FROM_REDIS = False
 
 logging.basicConfig(level=logging.DEBUG)
@@ -99,23 +99,26 @@ if INIT_REDIS_CACHE:
 
 
 # LOOKUP SERUIDS
-
 if LOOKUP_STUIDS:
 
     for key in R.keys():
         d = Dixel(key=key, cache=R)
         ret = O.find(d, remote_aet)
         if ret:
-            # Take the first entry in ret and update the STUID so we can retrieve
+            # Take the first entry in ret and update the STUID/SERUID/INSTUID so we can retrieve
             d.data['StudyInstanceUID'] = ret[0].get("StudyInstanceUID")
             d.data['PatientName'] = ret[0].get("PatientName")
             d.data['PatientBirthDate'] = ret[0].get("PatientBirthDate")
             d.data['PatientSex'] = ret[0].get("PatientSex")
+            if d.dlvl == DLVL.SERIES or d.dlvl == DLVL.INSTANCES:
+                d.data['SeriesInstanceUID'] = ret[0].get("SeriesInstanceUID")
+            if d.dlvl == DLVL.INSTANCES:
+                d.data['SOPInstanceUID'] = ret[0].get("SOPInstanceUID")
+
             d.persist()
 
 
 # CREATE ANON_IDS
-
 if CREATE_ANON_IDS:
 
     mint = PseudoMint()
@@ -142,7 +145,6 @@ if CREATE_ANON_IDS:
 
 
 # COPY FROM PACS TO DISK
-
 if COPY_FROM_PACS:
 
     def anon_fn(d):
@@ -160,8 +162,13 @@ if COPY_FROM_PACS:
     for key in R.keys():
         d = Dixel(key=key, cache=R)
 
-        if not d.data.get('AnonName'):
-            logging.warn("No anon name for MRN {}".format(d.data['PatientID']))
+        if not d.data.get('AnonID'):
+            logging.warn("No anon ID for MRN {}".format(d.data['PatientID']))
+            continue
+
+        fp = os.path.join(save_dir, d.data['AnonID'] + '.zip')
+        if os.path.exists(fp):
+            logging.debug('{} already exists -- skipping'.format(d.data['AnonID'] + '.zip'))
             continue
 
         # TODO: Check if file already exists for lazy!
@@ -177,11 +184,12 @@ if COPY_FROM_PACS:
         logging.debug(r)
 
         d.data['AnonOID'] = r['ID']
+        d.persist()
 
         # Need an oid and a pname to save...
-        e = Dixel(key=d.data['AnonOID'], data={'OID': d.data['AnonOID'], 'PatientID': d.data['AnonName']}, dlvl=DLVL.STUDIES)
+        e = Dixel(key=d.data['AnonOID'], data={'OID': d.data['AnonOID'], 'PatientID': d.data['AnonID']}, dlvl=DLVL.STUDIES)
         file_data = O.get(e, get_type='file')
-        e.write(file_data, save_dir=save_dir)
+        e.write_file(file_data, save_dir=save_dir)
 
         if CLEAN_PROXY:
             O.remove(d)
