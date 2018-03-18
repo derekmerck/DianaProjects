@@ -29,6 +29,7 @@ from pprint import pformat
 data_root = "/Users/derek/Projects/Ultrasound/Thyroid Biopsy/data"
 save_dir = "/Volumes/3dlab/thyroid_biopsy/anon"
 remote_aet = "gepacs"
+db = 15
 
 INIT_REDIS_CACHE     = False
 LOOKUP_STUIDS        = False
@@ -41,7 +42,7 @@ logging.basicConfig(level=logging.DEBUG)
 with open("secrets.yml", 'r') as f:
     secrets = yaml.load(f)
 
-R = RedisCache(db=15, clear=INIT_REDIS_CACHE)
+R = RedisCache(db=db, clear=INIT_REDIS_CACHE)
 O = Orthanc(**secrets['services']['deathstar'])
 
 if INIT_REDIS_CACHE:
