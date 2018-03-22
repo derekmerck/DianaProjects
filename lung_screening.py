@@ -1,4 +1,7 @@
 """
+LCSR Data Extracts
+Merck, Winter 2018
+
 Extract all possible lung screening registry data from Montage dumps
 """
 

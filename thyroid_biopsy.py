@@ -1,10 +1,8 @@
 """
-U/S Thyroid Biopsy Cohort
+U/S Thyroid Confirmed Cancer Status Cohort
 Merck, Winter 2018
 
-Uses DianaFuture
-
-421 subjects with u/s biopsy and confirmed cancer status, 2016-2018
+421 subjects with u/s fna and confirmed cancer status, 2016-2018
 
 - Load Montage and Pathology spreadsheets and correlate subjects that
   exist in both datasets, i.e., patients with biopsy confirmed cancers.
@@ -12,7 +10,10 @@ Uses DianaFuture
 - Assign anonymized id, name, dob
 - Retrieve, anonymize, download, save
 - Build out final metadata
+
+Uses DianaFuture
 """
+
 from DianaFuture.dcache import CSVCache, RedisCache
 from DianaFuture.dixel import Dixel, DLVL
 from DianaFuture.dapi import Orthanc
@@ -148,13 +149,13 @@ if CREATE_ANON_IDS:
 # COPY FROM PACS TO DISK
 if COPY_FROM_PACS:
 
-    def anon_fn(d):
+    def anon_fn(dixel):
         return {
             'Replace': {
-                'PatientName': d.data['AnonName'],
-                'PatientID': d.data['AnonID'],
-                'PatientBirthDate': d.data['AnonDoB'].replace('-', ''),
-                'AccessionNumber': hashlib.md5(d.data['AccessionNumber']).hexdigest(),
+                'PatientName': dixel.data['AnonName'],
+                'PatientID': dixel.data['AnonID'],
+                'PatientBirthDate': dixel.data['AnonDoB'].replace('-', ''),
+                'AccessionNumber': hashlib.md5(dixel.data['AccessionNumber']).hexdigest(),
             },
             'Keep': ['PatientSex', 'StudyDescription', 'SeriesDescription'],
             'Force': True
