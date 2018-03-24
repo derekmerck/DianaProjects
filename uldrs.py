@@ -23,7 +23,7 @@ from hashlib import md5
 from DixelKit import DixelTools
 from DixelKit.Dixel import Dixel, DicomLevel
 from DixelKit.Orthanc import Orthanc, OrthancProxy
-from GUIDMint.GUIDMint import PseudoMint
+from GUIDMint.mints import PseudoMint
 from DixelKit.DixelReader import DixelReader, MetaTranslator
 
 data_root = "/Users/derek/Projects/Body/CT Ultralow Dose Renal Stone"
