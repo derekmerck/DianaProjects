@@ -1,7 +1,8 @@
 """
 Grand/Laurie Low-Dose Renal Stone Research Protocol
-
 Merck, Winter 2018
+
+Status: Done
 
 20 subjects with paired "low dose renal stone" and "ultra-low dose renal stone" protocols
 42 individual CT series, each subject _split_ into 2 pseudo-ids

@@ -2,6 +2,8 @@
 ELVO Study Cohort
 Merck, Winter 2018
 
+Status: In progress, pending image inventory update
+
 600+ subjects with ELVO studies and known stroke status, 2015?-2017
 
 Workflow to scrape positives, age match normals, collect, anonymize, and download

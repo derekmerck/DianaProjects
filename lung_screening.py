@@ -2,6 +2,8 @@
 LCSR Data Extracts
 Merck, Winter 2018
 
+Status: Done
+
 Extract all possible lung screening registry data from Montage dumps
 """
 

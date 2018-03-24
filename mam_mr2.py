@@ -2,6 +2,8 @@
 Mam MR Biopsy-Proven Cancer Status Cohort
 Merck, Winter 2018
 
+Status: Pending image inventory update
+
 550 subjects with breast MR and confirmed cancer status
 
 - Load Montage spreadsheets and label by cancer status
@@ -15,7 +17,7 @@ Uses DianaFuture
 
 import logging, os, re, yaml
 from DianaFuture import CSVCache, RedisCache, Dixel, DLVL, Orthanc, \
-    lookup_uids, set_anon_ids, copy_from_pacs, create_key_csv
+    lookup_uids, lookup_child_uids, set_anon_ids, copy_from_pacs, create_key_csv
 
 # ---------------------------------
 # CONFIG
@@ -50,10 +52,10 @@ remote_aet = "gepacs"
 
 # Sections to run
 INIT_CACHE           = False
-LOOKUP_UIDS          = False
+LOOKUP_CHILD_UIDS    = False
 CREATE_ANON_IDS      = False
 COPY_FROM_PACS       = False
-CREATE_KEY_CSV       = False
+CREATE_KEY_CSV       = True
 
 
 # ---------------------------------
@@ -90,17 +92,17 @@ if INIT_CACHE:
             d = Dixel(key=k, data=v, cache=R, remap_fn=Dixel.remap_montage_keys, dlvl=DLVL.STUDIES)
 
 
-if LOOKUP_UIDS:
+if LOOKUP_CHILD_UIDS:
+    #Q .clear()
     proxy = Orthanc(**secrets['services'][proxy_svc])
-
-    children_qs = [
+    child_qs = [
         {'SeriesDescription': '*STIR*'},
         {'SeriesDescription': '1*MIN*SUB*'},
         {'SeriesDescription': '2*MIN*SUB*'},
         {'SeriesDescription': '6*MIN*SUB*'},
     ]
 
-    lookup_child_uids(R, Q, children_qs, proxy, remote_aet, lazy=True)
+    lookup_child_uids(R, Q, child_qs, proxy, remote_aet)
 
 
 if CREATE_ANON_IDS:
@@ -108,7 +110,7 @@ if CREATE_ANON_IDS:
 
 # Where exactly are we putting this?  On disk for ML? on Hounsfield for review?  both?
 if COPY_FROM_PACS:
-    pass
+    copy_from_pacs(Q, save_dir)
 
 
 if CREATE_KEY_CSV:

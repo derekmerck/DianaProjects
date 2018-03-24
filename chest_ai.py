@@ -2,6 +2,8 @@
 Chest AI Pathology Cohort
 Merck, Winter 2018
 
+Status: In-progress (pulling)
+
 ~17k subjects with RADCAT'd P/A chest CR, 2017-2018
 
 - Load Montage spreadsheets and label by radcat
@@ -22,7 +24,7 @@ from DianaFuture import CSVCache, RedisCache, Dixel, DLVL, Orthanc, \
 # ---------------------------------
 
 data_root = "/Users/derek/Projects/Body/XR Chest AI/data"
-save_dir = "/Volumes/3dlab/chest_cr/anon"
+save_dir = "/Volumes/3dlab/chest_ai/anon"
 
 # All Montage input
 fns = ['chestai-1s.csv', 'chestai-4s.csv']
@@ -40,9 +42,9 @@ remote_aet = "gepacs"
 # Sections to run
 INIT_CACHE           = False
 LOOKUP_UIDS          = False
-CREATE_ANON_IDS      = True
-COPY_FROM_PACS       = False
-CREATE_KEY_CSV       = False
+CREATE_ANON_IDS      = False
+COPY_FROM_PACS       = True
+CREATE_KEY_CSV       = True
 
 
 # ---------------------------------
@@ -87,7 +89,7 @@ if COPY_FROM_PACS:
     # TODO: Could identify the AP/PA here, after we have tags
     if not proxy:
         proxy = Orthanc(**secrets['services'][proxy_svc])
-    copy_from_pacs(proxy, remote_aet, R, save_dir)
+    copy_from_pacs(proxy, remote_aet, R, save_dir, depth=2)
 
 
 if CREATE_KEY_CSV:

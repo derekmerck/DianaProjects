@@ -1,3 +1,12 @@
+"""
+GI Bleed Imaging & Intervention Registry
+Merck, Fall 2017
+
+Status: Done
+
+Identify all GI bleed CTAs and which went on to IR/embo
+"""
+
 import logging
 import yaml
 import os

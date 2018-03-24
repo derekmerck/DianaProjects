@@ -2,6 +2,8 @@
 U/S Thyroid Confirmed Cancer Status Cohort
 Merck, Winter 2018
 
+Status: Done
+
 421 subjects with u/s fna and confirmed cancer status, 2016-2018
 
 - Load Montage and Pathology spreadsheets and correlate subjects that
