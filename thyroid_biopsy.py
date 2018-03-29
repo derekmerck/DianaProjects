@@ -14,6 +14,9 @@ Status: Done
 - Build out final metadata
 
 Uses DianaFuture
+
+TODO: REMOVE PIXEL TEXT INFORMATION
+TODO: REMOVE SERIES W MORE THAN 20 INSTANCES(?)
 """
 
 from DianaFuture.dcache import CSVCache, RedisCache

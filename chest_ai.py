@@ -9,10 +9,12 @@ Status: In-progress (pulling)
 - Load Montage spreadsheets and label by radcat
 - Lookup UIDS and other patient data from PACS
 - Assign anonymized id, name, dob
-- Retrieve, anonymize, download, save
 - Build out final metadata
+- Retrieve, anonymize, download, save
 
 Uses DianaFuture
+
+TODO: IDENTIFY LATS VS APS
 """
 
 import logging, os, re, yaml
@@ -43,8 +45,8 @@ remote_aet = "gepacs"
 INIT_CACHE           = False
 LOOKUP_UIDS          = False
 CREATE_ANON_IDS      = False
+CREATE_KEY_CSV       = False
 COPY_FROM_PACS       = True
-CREATE_KEY_CSV       = True
 
 
 # ---------------------------------
@@ -60,6 +62,7 @@ R = RedisCache(db=db, clear=INIT_CACHE)
 
 proxy = None
 
+# Option to init by reading key?
 if INIT_CACHE:
     # Merge positive and negative spreadsheets and indicate status
     for fn in fns:
@@ -74,16 +77,16 @@ if INIT_CACHE:
             # v['SeriesDescription'] = "CHEST AP\PA"  # Query string for later
             d = Dixel(key=k, data=v, cache=R, remap_fn=Dixel.remap_montage_keys, dlvl=DLVL.STUDIES)
 
-
 # This takes ~15 mins
 if LOOKUP_UIDS:
     proxy = Orthanc(**secrets['services'][proxy_svc])
     lookup_uids(R, proxy, remote_aet, lazy=True)
 
-
 if CREATE_ANON_IDS:
     set_anon_ids(R, lazy=True)
 
+if CREATE_KEY_CSV:
+    create_key_csv(R, os.path.join(data_root, key_fn))
 
 if COPY_FROM_PACS:
     # TODO: Could identify the AP/PA here, after we have tags
@@ -92,5 +95,3 @@ if COPY_FROM_PACS:
     copy_from_pacs(proxy, remote_aet, R, save_dir, depth=2)
 
 
-if CREATE_KEY_CSV:
-    create_key_csv(R, os.path.join(data_root, key_fn))
