@@ -3,6 +3,7 @@ Anonymize and mirror particular images from hu-christianson to do-christianson
 
 """
 import yaml, logging, os
+from hashlib import md5
 from DianaFuture import Orthanc, DLVL, RedisCache, Dixel, create_key_csv
 from GUIDMint import PseudoMint
 
@@ -41,15 +42,18 @@ logging.basicConfig(level=logging.DEBUG)
 with open("secrets.yml", 'r') as f:
     secrets = yaml.load(f)
 
-INIT_CACHE = False
-INIT_DEST = False
+INIT_SCACHE = False
+INIT_DCACHE = False
+CLEAR_DEST = False
 SET_ANON_ID = False
 CREATE_KEY_CSV = False
 COPY_TO_DEST = True
 
-db = 9
+sdb = 9
+ddb = 8
 data_root = "/Users/derek/Desktop"
 key_fn = "morrow_key.csv"
+groups_fn = "morrow_groups.yml"
 
 key_fields = [  "AccessionNumber",
                 "PatientName",
@@ -57,12 +61,13 @@ key_fields = [  "AccessionNumber",
                 "AnonName"]
 
 
-R = RedisCache(db=db, clear=INIT_CACHE)
+R = RedisCache(db=sdb, clear=INIT_SCACHE)
+Q = RedisCache(db=ddb, clear=INIT_DCACHE)
 
-source = Orthanc(**secrets['services']['hounsfield+chrs'])
-dest = Orthanc(clear=INIT_DEST, **secrets['do']['christianson'])
+source = Orthanc(**secrets['lifespan']['hounsfield+chrs'])
+dest = Orthanc(clear=CLEAR_DEST, **secrets['do']['christianson'])
 
-if INIT_CACHE:
+if INIT_SCACHE:
     src_inv = source.inventory(DLVL.STUDIES)
     for oid in src_inv:
         ret = source.get( Dixel(oid, data={'OID': oid}, dlvl=DLVL.STUDIES) )
@@ -78,8 +83,32 @@ if INIT_CACHE:
         assert( dixel.oid() == oid)
         dixel.persist(R)
 
+if INIT_DCACHE:
+
+    dest_inv = dest.inventory(DLVL.STUDIES)
+    for oid in dest_inv:
+        ret = dest.get( Dixel(oid, data={'OID': oid}, dlvl=DLVL.STUDIES) )
+
+        data = {'AccessionNumber':  ret['AccessionNumber'],
+                'StudyInstanceUID': ret['StudyInstanceUID'],
+                'PatientID':        ret['PatientID'],
+                'PatientBirthDate': ret['PatientBirthDate'],
+                "PatientName":      ret['PatientName'],
+                "PatientSex":       ret['PatientSex'] }
+
+        dixel = Dixel(ret['AccessionNumber'], data=data, dlvl=DLVL.STUDIES)
+        assert( dixel.oid() == oid)
+        dixel.persist(Q)
+
+daccs = []
+for key in Q.cache.keys():
+    d = Dixel(key, cache=Q)
+    daccs.append( d.data.get('AccessionNumber') )
+
+logging.debug(daccs)
+
 if SET_ANON_ID:
-    with open(os.path.join(data_root, "christianson_key.yml"), 'r') as f:
+    with open(os.path.join(data_root, groups_fn), 'r') as f:
         key_data = yaml.load(f)
 
     logging.debug(key_data)
@@ -97,17 +126,18 @@ if CREATE_KEY_CSV:
 
 if COPY_TO_DEST:
 
-    # for key in R.keys():
-    #     d = Dixel(key=key, cache=R)
-    #     if d.data.get('AnonOID'):
-    #         del(d.data['AnonOID'])
-    #         logging.debug('Clearing anon oid')
-    #         d.persist()
-
     for key in R.keys():
-        d = Dixel(key=key, cache=R)
+        d = Dixel(key=key, cache=R, dlvl=DLVL.STUDIES)
+
         if d.data.get('AnonID'):
             # One of the chosen, send it
+
+            if md5( d.data.get('AccessionNumber') ).hexdigest() in daccs:
+                logging.debug('Found {}/{} ({}) - skipping'.format(d.data.get('PatientName'), d.data.get('AccessionNumber'), d.data.get('AnonName')))
+                continue
+            else:
+                logging.debug('Working on {}/{} ({})'.format(d.data.get('PatientName'), d.data.get('AccessionNumber'), d.data.get('AnonName')))
+
             if not d.data.get('AnonOID'):
                 r = source.anonymize(d)
                 logging.debug(r)
