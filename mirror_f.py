@@ -51,9 +51,9 @@ COPY_TO_DEST = True
 
 sdb = 9
 ddb = 8
-data_root = "/Users/derek/Desktop"
-key_fn = "morrow_key.csv"
-groups_fn = "morrow_groups.yml"
+data_root =  "/Users/derek/Desktop"
+key_fn =     "morrow_key.csv"
+groups_fn =  "morrow_groups.yml"
 
 key_fields = [  "AccessionNumber",
                 "PatientName",
