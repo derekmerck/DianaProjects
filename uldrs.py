@@ -133,34 +133,34 @@ if __name__=="__main__":
     with open("secrets.yml", 'r') as f:
         secrets = yaml.load(f)
 
-    deathstar = OrthancProxy(**secrets['services']['deathstar'])
-    hounsfield = Orthanc(**secrets['services']['hounsfield+uldrs'])
-
-    reader = DixelReader(os.path.join(data_root, csv_fn))
-    tmp = reader.read_csv2()
-
-    worklist = set()
-    for w in tmp:
-        m = MetaTranslator.translate_meta(w)
-        d = Dixel(id=''.join(m['id']), meta=m, level=DicomLevel.SERIES)
-        worklist.add(d)
-        # logging.debug(d.meta)
-
-    # Get SERUIDS
-    series_qs = [{'qdict': {'SeriesInstanceUID': ''}}]
-    DixelTools.lookup_seruids(deathstar, series_qs,
-                              worklist=worklist,
-                              data_root=data_root, csv_fn=csv_fn,
-                              save_file=True)
-
-    # Create Anon tags
-    csv_fn = "uldrs3+seruids.csv"
-    anonymize(data_root, csv_fn)
-
-    # Copy from PACS
-    csv_fn = "uldrs3+seruids+anon.csv"
-    copy_from_pacs(deathstar, data_root, csv_fn,
-                   dest=hounsfield, anon_fn=anon_fn)
+    # deathstar = OrthancProxy(**secrets['services']['deathstar'])
+    # hounsfield = Orthanc(**secrets['services']['hounsfield+uldrs'])
+    #
+    # reader = DixelReader(os.path.join(data_root, csv_fn))
+    # tmp = reader.read_csv2()
+    #
+    # worklist = set()
+    # for w in tmp:
+    #     m = MetaTranslator.translate_meta(w)
+    #     d = Dixel(id=''.join(m['id']), meta=m, level=DicomLevel.SERIES)
+    #     worklist.add(d)
+    #     # logging.debug(d.meta)
+    #
+    # # Get SERUIDS
+    # series_qs = [{'qdict': {'SeriesInstanceUID': ''}}]
+    # DixelTools.lookup_seruids(deathstar, series_qs,
+    #                           worklist=worklist,
+    #                           data_root=data_root, csv_fn=csv_fn,
+    #                           save_file=True)
+    #
+    # # Create Anon tags
+    # csv_fn = "uldrs3+seruids.csv"
+    # anonymize(data_root, csv_fn)
+    #
+    # # Copy from PACS
+    # csv_fn = "uldrs3+seruids+anon.csv"
+    # copy_from_pacs(deathstar, data_root, csv_fn,
+    #                dest=hounsfield, anon_fn=anon_fn)
 
 
     import itertools
@@ -168,7 +168,10 @@ if __name__=="__main__":
         csv_file = os.path.join(data_root, csv_fn)
         worklist, fieldnames = DixelTools.load_csv(csv_file, dicom_level=DicomLevel.SERIES)
 
-        fieldnames = [ 'PatientID', 'PatientName', 'PatientBirthDate',
+        for d in worklist:
+            d.meta['Class'] = "ULDRS" if 'uldrs' in d.meta['tags'] else "NRST"
+
+        fieldnames = [ 'Class', 'PatientID', 'PatientName', 'PatientBirthDate',
                        'AnonID', 'AnonName', 'AnonAge', 'AnonDoB', 'PatientSex' ]
 
         def keyfunc(v):
