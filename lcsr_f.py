@@ -13,8 +13,8 @@ Status: In-progress (pulling)
 Uses DianaFuture
 """
 
-import logging, yaml
-from DianaFuture import Orthanc, Dixel, DLVL, RedisCache, CSVCache
+import os, logging, yaml, re
+from DianaFuture import Orthanc, Dixel, DLVL, RedisCache, CSVCache, lookup_child_uids, create_key_csv
 from DixelKit import StructuredTags
 from pprint import pformat
 
@@ -22,12 +22,20 @@ from pprint import pformat
 # CONFIG
 # ---------------------------------
 
-fp="/Users/derek/Desktop/lscr_all_data1.csv"
+data_root = "/Users/derek/Projects/Body/CT Lung Screening"
+fn="lscr_all_data1.csv"
+key_fn = "lscr_all_data+series.csv"
+key_fn1 = "lscr_all_data+dose.csv"
 
 svc_domain = "lifespan"
 proxy_svc = "deathstar"
-dest_svc = "cirr1"
+remote_aet = "gepacs"
 db=7
+
+INIT_CACHE = False
+LOOKUP_SERUIDS = False
+COPY_FROM_PACS = True
+READ_OUT_DOSE = True
 
 # ---------------------------------
 # SCRIPT
@@ -39,72 +47,73 @@ with open("secrets.yml", 'r') as f:
     secrets = yaml.load(f)
 
 proxy = Orthanc(**secrets[svc_domain][proxy_svc])
-dest  = Orthanc(**secrets[svc_domain][dest_svc])
 
-R = RedisCache(db=db)
-Q = RedisCache(db=db-1)
+R = RedisCache(db=db, clear=INIT_CACHE)
+Q = RedisCache(db=db-1, clear=INIT_CACHE)
 
 worklist = set()
 
-for k in R.cache.keys():
-    v = R.cache.get(k)
 
-    if not v.get("StudyInstanceUID"):
-        continue
+if INIT_CACHE:
 
-    d = Dixel(k, data=v)
+    fp = os.path.join(data_root, fn)
+    M = CSVCache(fp, key_field="AccessionNumber")
 
-    info = proxy.get(d, 'info')
-    instances = info['Instances']
+    for k, v in M.cache.iteritems():
+        data = {}
+        data['PatientID'] = v['PatientID']
+        data['AccessionNumber'] = v['AccessionNumber']
+        d = Dixel(key=k, data=data, cache=R, dlvl=DLVL.STUDIES)
 
-    if len(instances) == 1:
-        inst_oid = instances[0]
-        e = Dixel(inst_oid, data=d.data, cache=Q, dlvl=DLVL.INSTANCES)
-        e.data['OID'] = inst_oid
-        tags = proxy.get(e)
+if LOOKUP_SERUIDS:
 
-        st = StructuredTags.simplify_tags(tags)
+    Q.clear()
 
-        logging.debug(pformat(st))
+    proxy = Orthanc(**secrets['lifespan'][proxy_svc])
 
-exit()
+    child_qs = [
+        {'SeriesNumber': '999'}
+    ]
 
+    lookup_child_uids(R, Q, child_qs, proxy, remote_aet)
 
-# M = CSVCache(fp, key_field="AccessionNumber")
-#
-# for k, v in M.cache.iteritems():
-#     if v["StationManufacturer"].startswith("General"):
-#         v['SeriesNumber'] = "997"
-#         d = Dixel(key=k, data=v, cache=R, dlvl=DLVL.SERIES)
-#         d.persist()
-#         worklist.add(d)
+    key_fp = os.path.join(data_root, key_fn)
+    create_key_csv(Q, key_fp, key_field="AccessionNumber")
 
-# data = {"AccessionNumber": "50072977",
-#         "PatientID": "10006579999",
-#         "SeriesNumber": "997"}
+if COPY_FROM_PACS:
 
-# d = Dixel("50072977", data=data, dlvl=DLVL.SERIES, cache=R)
-# d.persist()
+    for k in Q.cache.keys():
+        d = Dixel(key=k, cache=Q, dlvl=DLVL.SERIES)
+        if not d.data.get('StudyInstanceUID'):
+            continue
+        if not d in proxy:
+            proxy.find(d, remote_aet, retrieve=True)
 
-for d in worklist:
-    ret = proxy.find(d, "gepacs", retrieve=True)
-    if ret:
-        # Take the first entry in ret and update the STUID/SERUID/INSTUID so we can retrieve
-        d.data['StudyInstanceUID'] = ret[0].get("StudyInstanceUID")
-        d.data['PatientName'] = ret[0].get("PatientName")
-        d.data['PatientBirthDate'] = ret[0].get("PatientBirthDate")
-        d.data['PatientSex'] = ret[0].get("PatientSex")
-        if d.dlvl == DLVL.SERIES or d.dlvl == DLVL.INSTANCES:
-            d.data['SeriesInstanceUID'] = ret[0].get("SeriesInstanceUID")
-        if d.dlvl == DLVL.SERIES:
-            d.data['SeriesDescription'] = ret[0].get("SeriesDescription")
-            d.data['SeriesNumber'] = ret[0].get("SeriesNumber")
-            d.data['SeriesNumInstances'] = ret[0].get('NumberOfSeriesRelatedInstances')
-        if d.dlvl == DLVL.INSTANCES:
-            d.data['SOPInstanceUID'] = ret[0].get("SOPInstanceUID")
+if READ_OUT_DOSE:
 
-        d.persist()
+    for oid in proxy.inventory(DLVL.INSTANCES):
 
-        proxy.copy(d, dest )
-        d.data['DONE'] = True
-        d.persist()
+        d = Dixel(key=oid, data={'OID': oid}, dlvl=DLVL.INSTANCES)
+        tags = proxy.get(d, 'tags')
+        # logging.debug(pformat(tags))
+        #
+        # tags = StructuredTags.simplify_tags(tags)
+
+        logging.debug(pformat(tags))
+
+        accession_number = tags['AccessionNumber']
+        dose_note = tags['CommentsOnRadiationDose']
+        dlp = re.match(r"TotalDLP=(?P<val>\d+\.?\d+).*", dose_note).group('val')
+
+        if tags.get("ExposureDoseSequence"):
+            ctdi = tags['ExposureDoseSequence'][-1]['CTDIvol']
+        else:
+            ctdi = "UNKNOWN"
+
+        e = Dixel(accession_number, cache=R)
+        e.data['dlp'] = dlp
+        e.data['ctdi'] = ctdi
+        e.persist()
+
+    key_fp = os.path.join(data_root, key_fn1)
+    create_key_csv(R, key_fp, key_field="AccessionNumber")
