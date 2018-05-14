@@ -21,15 +21,13 @@ Merck, Spring 2018
 Uses DianaFuture
 """
 
-# TODO: Need to fix occassional no result error, where they key that it's looking for isn't there?
-
 import logging, os, re, yaml, hashlib
 from dateutil import parser as dateparser
 from datetime import timedelta, datetime
 from pprint import pformat
+from requests import ConnectionError
 from DianaFuture import CSVCache, RedisCache, Dixel, DLVL, Orthanc, \
     lookup_uids, create_key_csv
-from requests import ConnectionError
 
 # ---------------------------------
 # CONFIG
@@ -92,7 +90,6 @@ if INIT_CACHE:
     def find_patient(penrad_v, path_cache):
 
         def like(penrad_v, path_v):
-            # Adkins, Carolann M != BOOKERJORGE | LORENE | A
             penrad_name = penrad_v['PatientName'].replace(',','').split()
             penrad_lname = penrad_name[0].lower()
             penrad_fname = penrad_name[1].lower()
@@ -180,18 +177,26 @@ if COPY_FROM_PACS:
 
     for k,v in R.cache.iteritems():
         d = Dixel(k, cache=R)
+
+        if d.data.get('complete'):
+            continue
+
         if d.data['PathCase'] == "None":
             status = "neg"
         else:
             status = "pos"
 
-        proxy.find(d, 'gepacs', retrieve=True)
         try:
+            proxy.find(d, 'gepacs', retrieve=True)
             ser_oids = proxy.get(d, get_type='info')['Series']
-        except ConnectionError:
-            logging.error("Failed to process {}".format(d.data['AccessionNumber']))
+        except (ConnectionError, KeyError), e:
+            prid = k
+            an = d.data.get('AccessionNumber', 'UNK ACCESSION')
+            mrn = d.data.get('PatientID', 'UNK MRN')
+            info = ":".join([prid, mrn, an])
+            logging.error("Failed to process {}".format(info))
             with open("usbx_failures_log.txt", "a") as f:
-                f.write(d.data['AccessionNumber'] + '\n')
+                f.write(info + '\n' )
                 continue
 
         for ser_oid in ser_oids:
@@ -209,3 +214,7 @@ if COPY_FROM_PACS:
 
                 file_data = proxy.get(f, get_type='file')
                 f.write_image(file_data, save_dir=save_dir)
+
+        # All done with this one, don't bother grabbing it again
+        d.data['complete'] = True
+        d.persist()

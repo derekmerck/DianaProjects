@@ -13,8 +13,6 @@ Status: In-progress (pulling)
 - Retrieve, anonymize, download, save
 
 Uses DianaFuture
-
-TODO: IDENTIFY LATS VS APS
 """
 
 import logging, os, re, yaml
