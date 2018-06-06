@@ -15,7 +15,7 @@ Status: In-progress (pulling)
 Uses DianaFuture
 """
 
-import logging, os, re, yaml
+import logging, os, re, yaml, hashlib
 from DianaFuture import CSVCache, RedisCache, Dixel, DLVL, Orthanc, \
     lookup_uids, set_anon_ids, copy_from_pacs, create_key_csv
 
@@ -23,8 +23,10 @@ from DianaFuture import CSVCache, RedisCache, Dixel, DLVL, Orthanc, \
 # CONFIG
 # ---------------------------------
 
-data_root = "/Users/derek/Projects/Body/XR Chest AI/data"
-save_dir = "/Volumes/3dlab/chest_ai/anon"
+data_root = "/Users/derek/Projects/Body/XR Chest AI/data/"
+# save_dir = "/Users/derek/Dropbox (Brown)/CRchest_anon/"
+
+save_dir = "/Volumes/3dlab/chest_ai/anon0"
 
 # All Montage input
 fns = ['chestai-1s.csv', 'chestai-4s.csv']
@@ -41,6 +43,7 @@ remote_aet = "gepacs"
 
 # Sections to run
 INIT_CACHE           = False
+RELOAD_CACHE         = False
 LOOKUP_UIDS          = False
 CREATE_ANON_IDS      = False
 CREATE_KEY_CSV       = False
@@ -56,7 +59,7 @@ logging.basicConfig(level=logging.DEBUG)
 with open("secrets.yml", 'r') as f:
     secrets = yaml.load(f)
 
-R = RedisCache(db=db, clear=INIT_CACHE)
+R = RedisCache(db=db, clear=INIT_CACHE or RELOAD_CACHE)
 
 proxy = None
 
@@ -75,6 +78,15 @@ if INIT_CACHE:
             # v['SeriesDescription'] = "CHEST AP\PA"  # Query string for later
             d = Dixel(key=k, data=v, cache=R, remap_fn=Dixel.remap_montage_keys, dlvl=DLVL.STUDIES)
 
+if RELOAD_CACHE:
+    key_fp = os.path.join(data_root, key_fn)
+    M = CSVCache(key_fp, key_field="AccessionNumber")
+
+    for k, v in M.cache.iteritems():
+        v['AnonAccessionNum'] = hashlib.md5(v["AccessionNumber"]).hexdigest()
+        v['status'] = 'ready'
+        d = Dixel(key=k, data=v, cache=R)
+
 # This takes ~15 mins
 if LOOKUP_UIDS:
     proxy = Orthanc(**secrets['services'][proxy_svc])
@@ -89,7 +101,7 @@ if CREATE_KEY_CSV:
 if COPY_FROM_PACS:
     # TODO: Could identify the AP/PA here, after we have tags
     if not proxy:
-        proxy = Orthanc(**secrets['services'][proxy_svc])
+        proxy = Orthanc(**secrets['lifespan'][proxy_svc])
     copy_from_pacs(proxy, remote_aet, R, save_dir, depth=2)
 
 

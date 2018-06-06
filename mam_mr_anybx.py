@@ -43,8 +43,8 @@ fns.append("birads_6+pos.csv")
 key_fn = "mam_mr_key.csv"
 
 # Local RedisCache project db
-db_studies = 11
-db_series  = 10
+db_studies = 13
+db_series  = 12
 
 # proxy service
 proxy_svc = "deathstar"
@@ -101,6 +101,8 @@ if LOOKUP_CHILD_UIDS:
         {'SeriesDescription': '2*MIN*SUB*'},
         {'SeriesDescription': '6*MIN*SUB*'},
     ]
+    # We also want "t1_fl3d_tra_interVIEWS" series
+    # Isometric pixels, best chance of seeing small features and margin
 
     lookup_child_uids(R, Q, child_qs, proxy, remote_aet)
 

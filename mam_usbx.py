@@ -34,7 +34,8 @@ from DianaFuture import CSVCache, RedisCache, Dixel, DLVL, Orthanc, \
 # ---------------------------------
 
 data_root = "/Users/derek/Projects/Mammography/MR Breast ML/data/all_usbx"
-save_root = "/Users/derek/Dropbox (Brown)/USbx_anon"
+# save_root = "/Users/derek/Dropbox (Brown)/USbx_anon"
+save_root = "/Volumes/3dlab/mam_ai/USbx_anon"
 err_logfile = "usbx_failure_log.txt"
 
 # All Penrad input
@@ -53,11 +54,12 @@ db_series  = 10
 # proxy service
 proxy_svc = "deathstar"
 remote_aet = "gepacs"
+svc_domain = "lifespan"
 
 # Sections to run
 INIT_CACHE            = False
-RELOAD_CACHE          = False
 LOOKUP_ACCESSION_NUMS = False
+RELOAD_CACHE          = False
 COPY_FROM_PACS        = True
 
 
@@ -69,9 +71,10 @@ logging.basicConfig(level=logging.DEBUG)
 
 with open("secrets.yml", 'r') as f:
     secrets = yaml.load(f)
+    services = secrets['services'][svc_domain]
 
 R = RedisCache(db=db_studies, clear=( INIT_CACHE or RELOAD_CACHE ) )
-Q = RedisCache(db=db_series, clear=( INIT_CACHE or RELOAD_CACHE ))
+Q = RedisCache(db=db_series, clear=( INIT_CACHE or RELOAD_CACHE ) )
 
 proxy = None
 
@@ -155,7 +158,7 @@ if INIT_CACHE:
 
 if LOOKUP_ACCESSION_NUMS:
 
-    proxy = Orthanc(**secrets['lifespan'][proxy_svc])
+    proxy = Orthanc(**services[proxy_svc])
     # Get accession num, study UUID
     lookup_uids(R, proxy, remote_aet)
 
@@ -167,18 +170,25 @@ if RELOAD_CACHE:
 
     fp = os.path.join(data_root, key_fn)
     M = CSVCache(fp, key_field="PenradID")
-    for k,v in M.cache.iteritems():
+    for k, v in M.cache.iteritems():
         Dixel(key=k, data=v, cache=R, dlvl=DLVL.STUDIES)
+
 
 if COPY_FROM_PACS:
     # Deep copy -- retrieve study, move data by instance b/c we need to process each one
 
-    proxy = Orthanc(**secrets['lifespan'][proxy_svc])
+    proxy = Orthanc(**services[proxy_svc])
 
     for k,v in R.cache.iteritems():
         d = Dixel(k, cache=R)
 
+        # Skip if there is any entry
         if d.data.get('complete'):
+            continue
+
+        if not d.data.get('PathCase'):
+            d.data['complete'] = "No label"
+            d.persist()
             continue
 
         if d.data['PathCase'] == "None":
@@ -197,14 +207,16 @@ if COPY_FROM_PACS:
             logging.error("Failed to process {}".format(info))
             with open("usbx_failures_log.txt", "a") as f:
                 f.write(info + '\n' )
-                continue
+            d.data['complete'] = "Unretrievable"
+            d.persist()
+            continue
 
         for ser_oid in ser_oids:
             e = Dixel(key=ser_oid, data={'OID': ser_oid}, dlvl=DLVL.SERIES)
             inst_oids = proxy.get(e, get_type="info")['Instances']
             for inst_oid in inst_oids:
                 f = Dixel(key=inst_oid, data={'OID': inst_oid}, dlvl=DLVL.INSTANCES)
-                save_dir = os.path.join(save_root, status, d.data['AnonID'])
+                save_dir = os.path.join(save_root, status, hashlib.md5( d.data['AccessionNumber'] ).hexdigest()[0:8])
 
                 # check if file exists before we grab it
                 fp = os.path.join(save_dir, '{}.png'.format(d.oid()))
@@ -215,6 +227,6 @@ if COPY_FROM_PACS:
                 file_data = proxy.get(f, get_type='file')
                 f.write_image(file_data, save_dir=save_dir)
 
-        # All done with this one, don't bother grabbing it again
-        d.data['complete'] = True
+        # All done with this one, don't want to bother grabbing it again
+        d.data['complete'] = "Labeled"
         d.persist()
