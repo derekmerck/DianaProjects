@@ -6,7 +6,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 data_dir = "/Users/derek/data/RADCAT/ED QI"
 
-out_fn = "ed_qi_anon.csv"
+out_fn = "ed_qi_anon+phi.csv"
 out_fp = os.path.join(data_dir, out_fn)
 
 csv_files = glob.glob( os.path.join( data_dir, "ct_*.csv") )
@@ -45,14 +45,14 @@ def anonymize(d):
     guid = mint.mint_guid(secret)
     pseudonym = mint.pseudonym(guid, gender)
 
-    d.data['PatientID'] = guid
-    d.data['PatientName'] = pseudonym
-    d.data['AccessionNumber'] = hashlib.md5(d.data["AccessionNumber"]).hexdigest()
+    d.data['AnonPatientID'] = guid
+    d.data['AnonPatientName'] = pseudonym
+    d.data['AnonAccessionNumber'] = hashlib.md5(d.data["AccessionNumber"]).hexdigest()
 
     refp_guid = mint.mint_guid(d.data['ReferringPhysicianName'])
     refp_pname = mint.pseudonym(refp_guid)
 
-    d.data['ReferringPhysicianName'] = refp_pname
+    d.data['AnonReferringPhysicianName'] = refp_pname
 
 
 for d in worklist:
@@ -95,13 +95,19 @@ fieldnames = [
 
     'AccessionNumber',
     'PatientID',
-    'PatientName',
     'PatientAge',
     'PatientSex',
+
+    'AnonAccessionNumber',
+    'AnonPatientID',
+    'AnonPatientName',
 
     'StudyDate',
     'StudyDescription',
     'ReferringPhysicianName',
+
+    'AnonReferringPhysicianName',
+
     'ReportText',
 
     'Query',

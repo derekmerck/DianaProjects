@@ -19,7 +19,7 @@ input_fn2 = "mam_mr_mrbx_seruid.csv"
 
 # Output key file
 key_fn0    = "mam_mr_mrbx.complete.key.csv"
-key_fn1   = "mam_mr_mrbx_seruid.key.csv"
+key_fn1   = "mam_mr_mrbx_seruid2.key.csv"
 
 # Local RedisCache project db
 db_studies = 13
@@ -33,9 +33,9 @@ dest_svc = "hounsfield+mam"
 
 # Sections to run
 INIT_CACHE          = False
-LOOKUP_ACCESSION_NUMS = False
-LOOKUP_CHILD_UIDS   = False
-RELOAD_CACHE        = False
+RELOAD_CACHE        = True
+LOOKUP_ACCESSION_NUMS = True
+LOOKUP_CHILD_UIDS   = True
 COPY_FROM_PACS      = True
 
 
@@ -72,9 +72,15 @@ if INIT_CACHE:
     # Down to 234
 
 
+if RELOAD_CACHE:
+    fp1 = os.path.join(data_root, key_fn1)
+    M = CSVCache(fp1, key_field="AccessionNumber")
+    for k, v in M.cache.iteritems():
+        d = Dixel(key=k, data=v, cache=R)
+
 if LOOKUP_ACCESSION_NUMS:
 
-    proxy = Orthanc(**secrets['lifespan'][proxy_svc])
+    proxy = Orthanc(**services[proxy_svc])
     # Get accession num, study UUID
     lookup_uids(R, proxy, remote_aet)
 
@@ -89,11 +95,13 @@ if LOOKUP_ACCESSION_NUMS:
     # - Remove PatientID - often old ones are incorrect
     # - For RMR6398, the a/n with images is always 1 less (that's the cad)
 
+
+
 if LOOKUP_CHILD_UIDS:
-    proxy = Orthanc(**secrets[svc_domain][proxy_svc])
+    proxy = Orthanc(**services[proxy_svc])
     child_qs = [
         {'SeriesDescription': '*STIR*'},
-        {'SeriesDescription': '1*MIN*SUB*'},
+        {'SeriesDescription': '[1I]*MIN*SUB*'},
         {'SeriesDescription': '2*MIN*SUB*'},
         {'SeriesDescription': '6*MIN*SUB*'},
     ]
@@ -104,12 +112,6 @@ if LOOKUP_CHILD_UIDS:
 
     fp1 = os.path.join(data_root, key_fn1)
     create_key_csv(Q, fp1, key_field="SeriesInstanceUID")
-
-if RELOAD_CACHE:
-    fp1 = os.path.join(data_root, key_fn1)
-    M = CSVCache(fp1, key_field="SeriesInstanceUID")
-    for k, v in M.cache.iteritems():
-        d = Dixel(key=k, data=v, cache=Q)
 
 if COPY_FROM_PACS:
     # Deep copy -- retrieve study, move data by instance b/c we need to process each one
