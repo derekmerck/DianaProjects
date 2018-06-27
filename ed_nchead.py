@@ -13,7 +13,7 @@ IMG181 11/1/17 -> 5/31 (6mos) + RADCAT4 = priority (has a bleed) (~1600)
 - Save as DCM stacks in Yes/No folders (RADAT1 vs. RADCAT4)
 """
 
-import logging, yaml, os
+import logging, yaml, os, hashlib
 from DianaFuture import RedisCache, CSVCache, Orthanc, Dixel, DLVL, lookup_child_uids, create_key_csv, set_anon_ids, copy_from_pacs
 
 # ---------------------------------
@@ -35,7 +35,7 @@ db_series  = 7
 
 # proxy service config
 svc_domain = "lifespan"
-proxy_svc  = "deathstar1"
+proxy_svc  = "deathstar"
 remote_aet = "gepacs"
 
 # Sections to run
@@ -43,7 +43,7 @@ INIT_CACHE          = False
 LOOKUP_CHILD_UIDS   = False
 SET_ANON_IDS        = False
 RELOAD_CACHE        = False
-COPY_FROM_PACS      = False
+COPY_FROM_PACS      = True
 
 
 # ---------------------------------
@@ -100,6 +100,9 @@ if RELOAD_CACHE:
     M = CSVCache(fp, key_field="SeriesInstanceUID")
     for k, v in M.cache.iteritems():
         d = Dixel(key=k, data=v, cache=Q)
+        d.data['AnonAccessionNum'] = hashlib.md5(d.data["AccessionNumber"]).hexdigest()
+        d.data['status'] = 'ready'
+        d.persist()
 
 
 if COPY_FROM_PACS:

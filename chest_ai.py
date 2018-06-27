@@ -38,6 +38,7 @@ key_fn = "chestai-17k.csv"
 db = 12
 
 # proxy service
+service_domain = "lifespan"
 proxy_svc = "deathstar"
 remote_aet = "gepacs"
 
@@ -78,30 +79,36 @@ if INIT_CACHE:
             # v['SeriesDescription'] = "CHEST AP\PA"  # Query string for later
             d = Dixel(key=k, data=v, cache=R, remap_fn=Dixel.remap_montage_keys, dlvl=DLVL.STUDIES)
 
-if RELOAD_CACHE:
-    key_fp = os.path.join(data_root, key_fn)
-    M = CSVCache(key_fp, key_field="AccessionNumber")
 
+# This takes ~15 mins
+if LOOKUP_UIDS:
+    proxy = Orthanc(**secrets[service_domain][proxy_svc])
+    lookup_uids(R, proxy, remote_aet, lazy=True)
+
+
+if CREATE_ANON_IDS:
+    set_anon_ids(R, lazy=True)
     for k, v in M.cache.iteritems():
         v['AnonAccessionNum'] = hashlib.md5(v["AccessionNumber"]).hexdigest()
         v['status'] = 'ready'
         d = Dixel(key=k, data=v, cache=R)
 
-# This takes ~15 mins
-if LOOKUP_UIDS:
-    proxy = Orthanc(**secrets['services'][proxy_svc])
-    lookup_uids(R, proxy, remote_aet, lazy=True)
-
-if CREATE_ANON_IDS:
-    set_anon_ids(R, lazy=True)
 
 if CREATE_KEY_CSV:
     create_key_csv(R, os.path.join(data_root, key_fn))
 
+
+if RELOAD_CACHE:
+    key_fp = os.path.join(data_root, key_fn)
+    M = CSVCache(key_fp, key_field="AccessionNumber")
+    for k, v in M.cache.iteritems():
+        d = Dixel(key=k, data=v, cache=R)
+
+
 if COPY_FROM_PACS:
     # TODO: Could identify the AP/PA here, after we have tags
     if not proxy:
-        proxy = Orthanc(**secrets['lifespan'][proxy_svc])
+        proxy = Orthanc(**secrets[service_domain][proxy_svc])
     copy_from_pacs(proxy, remote_aet, R, save_dir, depth=2)
 
 
