@@ -107,7 +107,6 @@ if RELOAD_CACHE:
 
 if COPY_FROM_PACS:
 
-    # TODO: Add yes/no buckets
     if not proxy:
         proxy = Orthanc(**services[proxy_svc])
     copy_from_pacs(proxy, remote_aet, Q, save_root, depth=1)

@@ -167,8 +167,6 @@ if SELECT_CONTROLS:
 
 if LOOKUP_UIDS:
 
-
-
     fp = os.path.join(data_root, key_fn)
     create_key_csv(R, fp, key_field="AccessionNumber")
 

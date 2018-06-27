@@ -27,7 +27,7 @@ save_root = "/Volumes/3dlab/ablation/perseon_anon"
 
 # All Montage input
 fn = 'perseon_singles.csv'
-key_fn = 'perseon_singles.uid.csv'
+key_fn = 'perseon_singles.key.csv'
 
 # Local RedisCache project db
 db = 10
