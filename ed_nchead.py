@@ -7,7 +7,7 @@ Montage search
 IMG181 11/1/17 -> 5/31 (6mos) + RADCAT1 = normal (~1800)
 IMG181 11/1/17 -> 5/31 (6mos) + RADCAT4 = priority (has a bleed) (~1600)
 
-- down to 2200, the other 1000 are probalby "mislabelled"
+- down to 2200, the other 1000 are probably "mislabelled"
 
 - Not bone window or scouts, just thick brain window series
 - Save as DCM stacks in Yes/No folders (RADAT1 vs. RADCAT4)

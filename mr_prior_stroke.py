@@ -36,9 +36,8 @@ remote_aet = "gepacs"
 
 # Sections to run
 INIT_CACHE          = False
-
 SELECT_CONTROLS     = False
-
+ADD_POST_STUDIES    = False
 LOOKUP_UIDS         = False
 SET_ANON_IDS        = False
 RELOAD_CACHE        = False
@@ -58,33 +57,6 @@ with open("secrets.yml", 'r') as f:
 R = RedisCache(db=db_studies, clear=(INIT_CACHE or RELOAD_CACHE))
 
 proxy = None
-
-# for k, v in R.cache.iteritems():
-#
-#     if v.get('Age'):
-#         v['PatientAge'] = v.get('Age')
-#
-#     if v.get('Date of pre-MRI'):
-#         v['StudyDate'] = v.get('Date of pre-MRI')
-#
-#     if v.get('Type of scan (pre)'):
-#         v['StudyDescription'] = v.get('Type of scan (pre)')
-#
-#     d = Dixel(key=k, data=v, cache=R)
-#     d.persist()
-#
-#
-#     # R.delete('Accession #')
-#     # R.delete('OrderCode')
-#     # R.delete('Organization')
-#     # R.delete('PatientFirstName')
-#     # R.delete('PatientLastName')
-#     # R.delete('PatientStatus')
-#     # R.delete('ReferringPhysician')
-#
-# fp = os.path.join(data_root, key_fn)
-# create_key_csv(R, fp, key_field="AccessionNumber")
-#
 
 if INIT_CACHE:
 
@@ -163,13 +135,24 @@ if SELECT_CONTROLS:
         N.save_fn()
         logging.debug("Saved {} entries".format(len(N)))
 
+if ADD_POST_STUDIES:
+
+    count = 0
+    for k,v in R.cache.iteritems():
+        if not v.get("Accession # (Post)"):
+            continue
+        d = Dixel(key=v.get("Accession # (Post)"),
+                  data={"AccessionNumber": v.get("Accession # (Post)"),
+                        "post_for": v.get("AnonAccessionNum")},
+                  cache=R, dlvl=DLVL.STUDIES)
+        d.persist()
+        logging.debug(d.data)
+        count = count + 1
+    logging.debug("Found {} post studies".format(count))
+
 
 
 if LOOKUP_UIDS:
-
-    fp = os.path.join(data_root, key_fn)
-    create_key_csv(R, fp, key_field="AccessionNumber")
-
 
     proxy = Orthanc(**services[proxy_svc])
     lookup_uids(R, proxy, remote_aet)
