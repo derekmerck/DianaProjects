@@ -1,6 +1,6 @@
 """
 Chest AI Pathology Cohort
-Merck, Winter 2018
+Merck, Summer 2018
 
 Status: In-progress (pulling)
 
@@ -9,106 +9,86 @@ Status: In-progress (pulling)
 - Load Montage spreadsheets and label by radcat
 - Lookup UIDS and other patient data from PACS
 - Assign anonymized id, name, dob
-- Build out final metadata
+- Build out final metadata key
 - Retrieve, anonymize, download, save
 
-Uses DianaFuture
+Revised to use diana_plus
 """
 
-import logging, os, re, yaml, hashlib
-from DianaFuture import CSVCache, RedisCache, Dixel, DLVL, Orthanc, \
-    lookup_uids, set_anon_ids, copy_from_pacs, create_key_csv
+# ---------------------------
+# Keep this before any diana imports
+from config import services
+# ---------------------------
 
-# ---------------------------------
-# CONFIG
-# ---------------------------------
-
-data_root = "/Users/derek/Projects/Body/XR Chest AI/data/"
-# save_dir = "/Users/derek/Dropbox (Brown)/CRchest_anon/"
-
-save_dir = "/Volumes/3dlab/chest_ai/anon0"
-
-# All Montage input
-fns = ['chestai-1s.csv', 'chestai-4s.csv']
-
-# Output key file
-key_fn = "chestai-17k.csv"
-
-# Local RedisCache project db
-db = 12
-
-# proxy service
-service_domain = "lifespan"
-proxy_svc = "deathstar"
-remote_aet = "gepacs"
-
-# Sections to run
-INIT_CACHE           = False
-RELOAD_CACHE         = False
-LOOKUP_UIDS          = False
-CREATE_ANON_IDS      = False
-CREATE_KEY_CSV       = False
-COPY_FROM_PACS       = True
-
-
-# ---------------------------------
-# SCRIPT
-# ---------------------------------
+import os, logging
+from diana.apis import MetaCache, Orthanc, DicomFile
+from diana.daemon import Porter
 
 logging.basicConfig(level=logging.DEBUG)
 
-with open("secrets.yml", 'r') as f:
-    secrets = yaml.load(f)
+# --------------
+# SCRIPT CONFIG
+# --------------
 
-R = RedisCache(db=db, clear=INIT_CACHE or RELOAD_CACHE)
+data_dir = "/Users/derek/Projects/Body/Chest CR/data"
+key_fn   = "chest_cr_17k.key.csv"
+save_dir = "/Volumes/3dlab/data/chest_cr_anon"
 
-proxy = None
+proxy_service = "proxy2"
+proxy_domain = "gepacs"
 
-# Option to init by reading key?
-if INIT_CACHE:
-    # Merge positive and negative spreadsheets and indicate status
-    for fn in fns:
-        fp = os.path.join(data_root, fn)
-        radcat = re.findall("chestai-(\d)s\.csv", fn)[0]  # set radcat from fn
-        # logging.debug("radcat: {}".format(radcat))
-        M = CSVCache(fp, key_field="Accession Number")
-        # Should series level dixels bc we only want the AP/PAs, however
-        # they are named inconsistently, so have to pull the whole study
-        for k, v in M.cache.iteritems():
-            v['radcat'] = radcat
-            # v['SeriesDescription'] = "CHEST AP\PA"  # Query string for later
-            d = Dixel(key=k, data=v, cache=R, remap_fn=Dixel.remap_montage_keys, dlvl=DLVL.STUDIES)
+PULL_FROM_PACS = True
 
+# Setup services
+dixels = MetaCache()
+proxy  = Orthanc(**services[proxy_service])
+files  = DicomFile(location=save_dir)
 
-# This takes ~15 mins
-if LOOKUP_UIDS:
-    proxy = Orthanc(**secrets[service_domain][proxy_svc])
-    lookup_uids(R, proxy, remote_aet, lazy=True)
+# Exfiltrate, anonymize, stash to disk
+if PULL_FROM_PACS:
+    # Start from the key file or other cache
+    fp = os.path.join(data_dir, key_fn)
+    dixels.load(fp)
 
-
-if CREATE_ANON_IDS:
-    set_anon_ids(R, lazy=True)
-    for k, v in M.cache.iteritems():
-        v['AnonAccessionNum'] = hashlib.md5(v["AccessionNumber"]).hexdigest()
-        v['status'] = 'ready'
-        d = Dixel(key=k, data=v, cache=R)
+    P = Porter(source=proxy, dest=files, proxy_domain=proxy_domain, explode=(1,2))
+    P.run(dixels)
 
 
-if CREATE_KEY_CSV:
-    create_key_csv(R, os.path.join(data_root, key_fn))
-
-
-if RELOAD_CACHE:
-    key_fp = os.path.join(data_root, key_fn)
-    M = CSVCache(key_fp, key_field="AccessionNumber")
-    for k, v in M.cache.iteritems():
-        d = Dixel(key=k, data=v, cache=R)
-
-
-if COPY_FROM_PACS:
-    # TODO: Could identify the AP/PA here, after we have tags
-    if not proxy:
-        proxy = Orthanc(**secrets[service_domain][proxy_svc])
-    copy_from_pacs(proxy, remote_aet, R, save_dir, depth=2)
-
-
+# # ---------------------------------
+# # CONFIG
+# # ---------------------------------
+#
+# data_root = "/Users/derek/Projects/Body/XR Chest AI/data/"
+#
+# # All Montage input
+# fns = ['chestai-1s.csv', 'chestai-4s.csv']
+#
+# # Option to init by reading key?
+# if INIT_CACHE:
+#     # Merge positive and negative spreadsheets and indicate status
+#     for fn in fns:
+#         fp = os.path.join(data_root, fn)
+#         radcat = re.findall("chestai-(\d)s\.csv", fn)[0]  # set radcat from fn
+#         # logging.debug("radcat: {}".format(radcat))
+#         M = CSVCache(fp, key_field="Accession Number")
+#         # Should series level dixels bc we only want the AP/PAs, however
+#         # they are named inconsistently, so have to pull the whole study
+#         for k, v in M.cache.iteritems():
+#             v['radcat'] = radcat
+#             # v['SeriesDescription'] = "CHEST AP\PA"  # Query string for later
+#             d = Dixel(key=k, data=v, cache=R, remap_fn=Dixel.remap_montage_keys, dlvl=DLVL.STUDIES)
+#
+#
+# # This takes ~15 mins
+# if LOOKUP_UIDS:
+#     proxy = Orthanc(**secrets[service_domain][proxy_svc])
+#     lookup_uids(R, proxy, remote_aet, lazy=True)
+#
+#
+# if CREATE_ANON_IDS:
+#     set_anon_ids(R, lazy=True)
+#     for k, v in M.cache.iteritems():
+#         v['AnonAccessionNum'] = hashlib.md5(v["AccessionNumber"]).hexdigest()
+#         v['status'] = 'ready'
+#         d = Dixel(key=k, data=v, cache=R)
+#

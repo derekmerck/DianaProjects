@@ -35,7 +35,7 @@ db_series  = 7
 
 # proxy service config
 svc_domain = "lifespan"
-proxy_svc  = "deathstar"
+proxy_svc  = "deathstar2"
 remote_aet = "gepacs"
 
 # Sections to run
@@ -100,9 +100,10 @@ if RELOAD_CACHE:
     M = CSVCache(fp, key_field="SeriesInstanceUID")
     for k, v in M.cache.iteritems():
         d = Dixel(key=k, data=v, cache=Q)
-        d.data['AnonAccessionNum'] = hashlib.md5(d.data["AccessionNumber"]).hexdigest()
-        d.data['status'] = 'ready'
-        d.persist()
+    #     d.data['AnonAccessionNum'] = hashlib.md5(d.data["AccessionNumber"]).hexdigest()
+    #     d.data['status'] = 'ready'
+    #     d.persist()
+    # create_key_csv(Q, fp, key_field="SeriesInstanceUID")
 
 
 if COPY_FROM_PACS:
