@@ -184,7 +184,7 @@ if COPY_FROM_PACS:
 
         # Check if it's there
         if not d in O:
-            logging.warn("{} was not retrieved successfully!".format(d.data["AccessionNumber"]))
+            logging.warning("{} was not retrieved successfully!".format(d.data["AccessionNumber"]))
 
         r = O.anonymize(d, anon_fn(d))
 

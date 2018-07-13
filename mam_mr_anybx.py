@@ -15,6 +15,54 @@ Status: Pending image inventory update
 Uses DianaFuture
 """
 
+# ---------------------------
+# Keep this before any diana imports
+# from config import services
+# ---------------------------
+
+import os, logging, hashlib, datetime
+from pprint import pprint
+from diana.apis import MetaCache, Orthanc, DicomFile, MammographyReport
+from diana.daemon import Porter
+from diana.utils import DicomLevel
+
+logging.basicConfig(level=logging.DEBUG)
+
+# --------------
+# SCRIPT CONFIG
+# --------------
+
+data_dir = "/Users/derek/Projects/Mammography/MR Breast ML/data/mr_prior_bx"
+input_fn = "all_candidates+seruids.csv"
+key_fn   = "all_candidates.key.csv"
+# save_dir = "/Volumes/3dlab/bone_age_ai/norm_hand_anon"
+
+# proxy_service = "proxy1"
+# proxy_domain = "gepacs"
+
+INIT_CACHE = True
+
+
+# Setup services
+dixels = MetaCache()
+
+# Load Montage format spreadsheet, find UIDs, set sham id
+if INIT_CACHE:
+    fp = os.path.join(data_dir, input_fn)
+    dixels.load(fp, level=DicomLevel.SERIES)
+
+    for d in dixels:
+        d.meta['birads'] = MammographyReport(d.report).birads()
+
+    # Everything we need to create a key file
+    fp = os.path.join(data_dir, key_fn)
+    dixels.dump(fp)
+
+
+
+exit()
+
+
 import logging, os, re, yaml
 from DianaFuture import CSVCache, RedisCache, Dixel, DLVL, Orthanc, \
     lookup_uids, lookup_child_uids, set_anon_ids, copy_from_pacs, create_key_csv

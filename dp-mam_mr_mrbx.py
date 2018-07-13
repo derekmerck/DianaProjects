@@ -1,4 +1,147 @@
 
+
+
+# ---------------------------
+# Keep this before any diana imports
+from config import services
+# ---------------------------
+
+import os, logging
+import attr
+from pprint import pformat
+from diana.apis import MetaCache, MammographyReport, Dixel, Orthanc
+from diana.utils import DicomLevel, dicom_strfdate, dicom_strfname
+from diana.daemon.porter import Porter, ProxyGetMixin, PeerSendMixin
+from guidmint import PseudoMint
+import hashlib
+import datetime
+
+logging.basicConfig(level=logging.DEBUG)
+
+# --------------
+# SCRIPT CONFIG
+# --------------
+
+data_dir0 = "/Users/derek/Projects/Mammography/MR Breast ML/data/mr_prior_mrbx"
+input_fn0   = "mam_mr_mrbx_seruid.key.csv"
+
+
+data_dir1 = "/Users/derek/Projects/Mammography/MR Breast ML/data/mr_prior_bx"
+input_fn1 = "all_candidates+seruids.csv"
+
+key_fn    = "mam_mr_mrbx.key.csv"
+peer_dest = "hounsfield-mam"
+
+# save_dir = "/Volumes/3dlab/bone_age_ai/norm_hand_anon"
+
+proxy_service = "proxy1"
+proxy_domain = "gepacs"
+
+INIT_CACHE = False
+COPY_FROM_PACS = True
+
+# Setup services
+dixels0 = MetaCache()
+dixels1 = MetaCache()
+proxy   = Orthanc(**services[proxy_service])
+dest    = Orthanc(**services[peer_dest])
+
+def set_shams(item, mint: PseudoMint):
+
+    sham_identity = mint.pseudo_identity(item.meta['PatientName'],
+                                         item.meta['PatientBirthDate'],
+                                         item.meta['PatientSex'])
+
+    item.meta['ShamAccession'] = hashlib.md5(item.meta['AccessionNumber'].encode("UTF8"))
+    item.meta['ShamID']        = sham_identity[0]
+    item.meta['ShamName']      = dicom_strfname( sham_identity[1] )
+    item.meta['ShamDoB']       = dicom_strfdate( sham_identity[2] )
+
+mint = PseudoMint()
+
+# Load Montage format spreadsheet, merge with birads 6 from MR_anybx
+if INIT_CACHE:
+    fp = os.path.join(data_dir0, input_fn0)
+    dixels0.load(fp, level=DicomLevel.SERIES)
+
+    fp = os.path.join(data_dir1, input_fn1)
+    dixels1.load(fp, level=DicomLevel.STUDIES)
+
+    # For each study in dixels1
+    #   - check the birads
+    #   - if it's a 6
+    #     - split it up
+    #     - add each series to dixels0
+
+    birads6 = 0
+    for d in dixels1:
+
+        # logging.debug(pformat(d.meta))
+
+        birads = MammographyReport(d.report).birads()
+        logging.debug("birads {}".format(birads))
+
+        if birads == "6":
+            birads6 += 1
+            # Create 4 new SERIES level dixels
+            for postfix in ["+STIR", "+1MS", "+2MS", "6MS"]:
+                meta = {
+                    "AccessionNumber": d.meta["AccessionNumber"],
+                    "OrderCode": d.meta["Exam Code"],
+                    "Organization": "",
+                    "PatientAge": d.meta["Patient Age"],
+                    "PatientBirthDate": None,
+                    "PatientID": d.meta["PatientID"+postfix],
+                    "PatientName": None,
+                    "PatientSex": None,
+                    "SeriesDescription": d.meta["SeriesDescription"+postfix],
+                    "SeriesInstanceUID": d.meta["SeriesInstanceUID"+postfix],
+                    "SeriesNumber": d.meta["SeriesNumber"+postfix],
+                    "StudyDate": d.meta["StudyDate"+postfix],
+                    "StudyDescription": None,
+                    "StudyInstanceUID": d.meta["StudyInstanceUID"+postfix],
+                }
+
+                did = (meta["AccessionNumber"], meta["SeriesDescription"])
+
+                e = Dixel(uid=did, meta=meta, level=DicomLevel.SERIES, report=d.report)
+                dixels0.put(e)
+
+    print("BIRADS 6s: {}".format(birads6))
+
+    for d in dixels0:
+        # Investigate to get UIDs
+        proxy.find_item(d, proxy_domain)
+        # set shams after investigation so you have complete dicom-format patient name
+        set_shams(d)
+
+    # Everything we need to create a key file
+    fp = os.path.join(data_dir0, key_fn)
+    dixels0.dump(fp)
+
+
+if COPY_FROM_PACS:
+
+    fp = os.path.join(data_dir0, key_fn)
+    dixels0.load(fp, level=DicomLevel.SERIES)
+
+    # for d in dixels0:
+    #     logging.debug(d)
+
+    @attr.s
+    class MyPorter(ProxyGetMixin, PeerSendMixin, Porter): pass
+
+    p = MyPorter(source=proxy, proxy_domain=proxy_domain, dest=dest, peer_dest=peer_dest)
+    p.run2(dixels0)
+
+
+exit()
+
+
+
+
+
+
 import logging, os, re, yaml
 from DianaFuture import CSVCache, RedisCache, Dixel, DLVL, Orthanc, \
     lookup_uids, lookup_child_uids, set_anon_ids, copy_from_pacs, create_key_csv
