@@ -7,6 +7,7 @@ from config import services
 # ---------------------------
 
 import os, logging
+from pprint import pprint
 import attr
 from pprint import pformat
 from diana.apis import MetaCache, MammographyReport, Dixel, Orthanc
@@ -24,7 +25,6 @@ logging.basicConfig(level=logging.DEBUG)
 
 data_dir0 = "/Users/derek/Projects/Mammography/MR Breast ML/data/mr_prior_mrbx"
 input_fn0   = "mam_mr_mrbx_seruid.key.csv"
-
 
 data_dir1 = "/Users/derek/Projects/Mammography/MR Breast ML/data/mr_prior_bx"
 input_fn1 = "all_candidates+seruids.csv"
@@ -46,24 +46,25 @@ dixels1 = MetaCache()
 proxy   = Orthanc(**services[proxy_service])
 dest    = Orthanc(**services[peer_dest])
 
-def set_shams(item, mint: PseudoMint):
-
-    sham_identity = mint.pseudo_identity(item.meta['PatientName'],
-                                         item.meta['PatientBirthDate'],
-                                         item.meta['PatientSex'])
-
-    item.meta['ShamAccession'] = hashlib.md5(item.meta['AccessionNumber'].encode("UTF8"))
-    item.meta['ShamID']        = sham_identity[0]
-    item.meta['ShamName']      = dicom_strfname( sham_identity[1] )
-    item.meta['ShamDoB']       = dicom_strfdate( sham_identity[2] )
-
 mint = PseudoMint()
 
 # Load Montage format spreadsheet, merge with birads 6 from MR_anybx
 if INIT_CACHE:
+    # MR plus MRbx
     fp = os.path.join(data_dir0, input_fn0)
     dixels0.load(fp, level=DicomLevel.SERIES)
 
+    for d in dixels0:
+        try:
+            birads = MammographyReport(d.report).birads()
+            logging.debug("birads {}".format(birads))
+        except ValueError:
+            birads = -1
+            logging.warning("No birads indicated")
+        d.meta['birads'] = birads
+        d.meta['batch'] = 1
+
+    # MR plus anybx -- need to collect only birads 6s
     fp = os.path.join(data_dir1, input_fn1)
     dixels1.load(fp, level=DicomLevel.STUDIES)
 
@@ -78,8 +79,13 @@ if INIT_CACHE:
 
         # logging.debug(pformat(d.meta))
 
-        birads = MammographyReport(d.report).birads()
-        logging.debug("birads {}".format(birads))
+        try:
+            birads = MammographyReport(d.report).birads()
+            logging.debug("birads {}".format(birads))
+        except ValueError:
+            logging.warning("No birads indicated")
+
+        d.meta['birads'] = birads
 
         if birads == "6":
             birads6 += 1
@@ -100,6 +106,8 @@ if INIT_CACHE:
                     "StudyDate": d.meta["StudyDate"+postfix],
                     "StudyDescription": None,
                     "StudyInstanceUID": d.meta["StudyInstanceUID"+postfix],
+                    "birads": birads,
+                    'batch': 2
                 }
 
                 did = (meta["AccessionNumber"], meta["SeriesDescription"])
@@ -111,11 +119,13 @@ if INIT_CACHE:
 
     for d in dixels0:
         # Investigate to get UIDs
-        proxy.find_item(d, proxy_domain)
-        # set shams after investigation so you have complete dicom-format patient name
-        set_shams(d)
+        d = proxy.find_item(d, proxy_domain)
+        # set shams _after_ investigation b/c need the complete dicom-format patient name
+        if d:
+            d.set_shams()
+        # pprint(d.meta)
 
-    # Everything we need to create a key file
+    # Have everything we need to create a key file
     fp = os.path.join(data_dir0, key_fn)
     dixels0.dump(fp)
 
@@ -124,9 +134,6 @@ if COPY_FROM_PACS:
 
     fp = os.path.join(data_dir0, key_fn)
     dixels0.load(fp, level=DicomLevel.SERIES)
-
-    # for d in dixels0:
-    #     logging.debug(d)
 
     @attr.s
     class MyPorter(ProxyGetMixin, PeerSendMixin, Porter): pass
