@@ -14,7 +14,7 @@ from config import services
 
 import os, logging, hashlib, datetime
 from pprint import pprint
-from diana.apis import MetaCache, Orthanc, DicomFile
+from diana.apis import MetaCache, Orthanc, DicomFile, BoneAgeReport
 from diana.daemon import Porter
 
 logging.basicConfig(level=logging.DEBUG)
@@ -32,22 +32,12 @@ proxy_service = "proxy2"
 proxy_domain = "gepacs"
 
 INIT_CACHE = False
-PULL_FROM_PACS = True
-
-# -------------
-
-def set_shams(item):
-    item.meta['ShamAccession'] = hashlib.md5(item.meta['AccessionNumber'].encode("UTF8"))
-    item.meta['ShamName']      = hashlib.md5(item.meta['PatientID'].encode("UTF8"))
-    item.meta['ShamID']        = hashlib.md5(item.meta['PatientID'].encode("UTF8"))
-    item.meta['ShamDoB']       = datetime.date(year=1900, month=1, day=1)
-
-# ------------
+PULL_FROM_PACS = False
 
 # Setup services
 dixels = MetaCache()
 proxy  = Orthanc(**services[proxy_service])
-files  = DicomFile(location=save_dir)
+dicom_files  = DicomFile(location=save_dir)
 
 # Load Montage format spreadsheet, find UIDs, set sham id
 if INIT_CACHE:
@@ -58,11 +48,24 @@ if INIT_CACHE:
         # Investigate to get UIDs
         proxy.find_item(d, proxy_domain)
         # set shams after investigation so you have complete dicom-format patient name
-        set_shams(d)
+        d.set_shams()
 
     # Everything we need to create a key file
     fp = os.path.join(data_dir, key_fn)
     dixels.dump(fp)
+
+
+fp = os.path.join(data_dir, key_fn)
+dixels.load(fp)
+for d in dixels:
+    d.meta["chron_age"] = BoneAgeReport.chronological_age(d.report)
+    d.meta["bone_age"]  = BoneAgeReport.skeletal_age(d.report)
+
+    logging.debug(d.meta['chron_age'])
+    logging.debug(d.meta['bone_age'])
+
+fp = os.path.join(data_dir, "test.csv")
+dixels.dump(fp)
 
 
 # Exfiltrate, anonymize, stash to disk
@@ -71,5 +74,5 @@ if PULL_FROM_PACS:
     fp = os.path.join(data_dir, key_fn)
     dixels.load(fp)
 
-    P = Porter(source=proxy, dest=files, proxy_domain=proxy_domain)
+    P = Porter(source=proxy, dest=dicom_files, proxy_domain=proxy_domain)
     P.run(dixels)

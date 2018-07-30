@@ -28,7 +28,8 @@ logging.basicConfig(level=logging.DEBUG)
 # --------------
 
 data_dir = "/Users/derek/Projects/Body/AAA/data"
-input_fg = "AAA*.csv"
+pos_input_fg = "AAA*.csv"
+neg_input_fn = "NoAAA1803-1806.csv"
 key_fn   = "aaa_ai.key.csv"
 
 corpus_save_dir = "/Users/derek/data/reports/AAA"
@@ -43,6 +44,7 @@ PULL_FROM_PACS = False
 
 # Setup services
 dixels = MetaCache()
+dixels_neg = MetaCache()
 proxy  = Orthanc(**services[proxy_service])
 dicom_files = DicomFile(location=dcm_save_dir)
 report_files  = ReportFile(location=corpus_save_dir)
@@ -59,7 +61,7 @@ if INIT_CACHE:
     })
 
     # Lisa's files are all _positive_ for AAA, need negative as well.
-    fg = os.path.join(data_dir, input_fg)
+    fg = os.path.join(data_dir, pos_input_fg)
     for fn in glob.glob(fg):
         fp = os.path.join(data_dir, fn)
         dixels.load(fp, keymap=MetaCache.montage_keymap )
@@ -71,12 +73,13 @@ if INIT_CACHE:
     for d in dixels:
 
         approx_dob = datetime.date(year=2018, month=1, day=1) - \
-                     datetime.timedelta(weeks=54*int(d.meta['PatientAge']))
+                     datetime.timedelta(weeks=54*float(d.meta['PatientAge']))
         d.meta['PatientBirthDate'] = approx_dob
         d.meta['PatientName'] = "{}".format(d.meta['PatientID'])
 
-        # d.set_shams()
+        d.set_shams()
 
+        d.meta['aaa_status'] = "pos"
 
         # Remove non-incidental or knowns (inconsistently reported)
         if d.meta.get("aaa_incidental", "").lower().startswith("n") or \
@@ -90,7 +93,7 @@ if INIT_CACHE:
             # there was an aaa noted
 
             if "no size" in d.meta.get("aaa_size").lower():
-                d.meta['aaa_size'] = "Not noted"
+                d.meta['aaa_size'] = "not noted"
                 d.meta["aaa_gave_rec"] = False
                 d.meta["aaa_followed_guidelines"] = False
 
@@ -107,7 +110,6 @@ if INIT_CACHE:
                 d.meta["aaa_gave_rec"] = False
                 d.meta["aaa_followed_guidelines"] = False
 
-
         logging.debug("{:<9} : {} : {:<9} : {:<15} : {:<5}  ".format(
                             d.meta.get("AccessionNumber"),
                             d.meta.get("StudyDate"),
@@ -120,14 +122,34 @@ if INIT_CACHE:
         d.report.anonymize()
         d.meta["_report"] = d.report.text
 
-    for d in dixels:
-        logging.debug( d.report )
+    fp = os.path.join(data_dir, neg_input_fn)
+    dixels_neg.load(fp, keymap=MetaCache.montage_keymap )
+
+    for d in dixels_neg:
+        if not d.meta.get('aaa_status'):
+            d.meta['aaa_status'] = "neg"
+
+            approx_dob = datetime.date(year=2018, month=1, day=1) - \
+                         datetime.timedelta(weeks=54 * float(d.meta['PatientAge']))
+            d.meta['PatientBirthDate'] = approx_dob
+            d.meta['PatientName'] = "{}".format(d.meta['PatientID'])
+
+            d.set_shams()
+
+            d.report.anonymize()
+            d.meta["_report"] = d.report.text
+
+        if d not in dixels:
+            dixels.put(d)
+        else:
+            logging.warning("Throwing out duplicate {}".format(d))
 
     logging.debug( len( dixels.cache ) )
 
     fp = os.path.join(data_dir, key_fn)
     dixels.dump(fp=fp,
-                extra_fieldnames=['aaa_size',
+                extra_fieldnames=['aaa_status',
+                                  'aaa_size',
                                   'aaa_gave_rec',
                                   'aaa_followed_guidelines'])
 

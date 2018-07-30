@@ -1,8 +1,7 @@
 import logging
 import yaml
-from DixelKit.FileStorage import FileStorage
+from FileStorage import FileStorage
 from DixelKit.Orthanc import Orthanc
-import json
 from DixelKit.DixelStorage import CachePolicy
 import time
 import sys
