@@ -15,14 +15,17 @@ Status: In-progress (pulling)
 Revised to use diana_plus
 """
 
+# $ docker run -d  -v /home/derek/config/cr_chest:/etc/orthanc -p 8103:8042 --rm --name chest_cr --env WVB_ENABLED=true osimis/orthanc
+
 # ---------------------------
 # Keep this before any diana imports
-from config import services
+from tests.config import services
 # ---------------------------
 
 import os, logging
 from diana.apis import MetaCache, Orthanc, DicomFile
 from diana.daemon import Porter
+from diana.daemon.porter import ProxyGetMixin, PeerSendMixin
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -31,27 +34,79 @@ logging.basicConfig(level=logging.DEBUG)
 # --------------
 
 data_dir = "/Users/derek/Projects/Body/Chest CR/data"
+
+# Validation source data
+# Images given radcat, no movson or agarwal
+val_fns = ["chest_cr_rad1.csv", "chest_cr_rad4.csv"]
+val_key_fn = "chest_cr_val.key.csv"
+
+# Training data
+# All images, fa17 -> sp18
 key_fn   = "chest_cr_17k.key.csv"
-save_dir = "/Volumes/3dlab/data/chest_cr_anon"
+save_dir = "/Volumes/3dlab/data/chest_cr_val_anon"
 
-proxy_service = "proxy2"
-proxy_domain = "gepacs"
+proxy_service  = "proxy1"
+proxy_domain   = "gepacs"
+review_service = "hounsfield-chcr"
 
-PULL_FROM_PACS = True
+SUBSELECT = False
+PULL_AND_SAVE = False
+PULL_AND_SEND = True
 
 # Setup services
-dixels = MetaCache()
 proxy  = Orthanc(**services[proxy_service])
-files  = DicomFile(location=save_dir)
+
+# -------------
+
+if SUBSELECT:
+    n = 100
+
+    val_key = MetaCache( location=os.path.join(data_dir, val_key_fn) )
+
+    for fn in val_fns:
+        dixels = MetaCache( location=os.path.join(data_dir, fn) )
+        dixels.load( keymap=MetaCache.montage_keymap )
+
+        for i in range(n):
+            d = dixels.select_random()
+            e = proxy.find_item(d, domain=proxy_domain)
+            d.set_shams()
+            d.meta['radcat'] = d.report.radcat()
+            val_key.put(d)
+
+    val_key.dump()
+
+
 
 # Exfiltrate, anonymize, stash to disk
-if PULL_FROM_PACS:
+if PULL_AND_SAVE:
+
+    dixels = MetaCache()
+    files = DicomFile(location=save_dir)
+
     # Start from the key file or other cache
-    fp = os.path.join(data_dir, key_fn)
+    fp = os.path.join(data_dir, val_key_fn)
     dixels.load(fp)
 
     P = Porter(source=proxy, dest=files, proxy_domain=proxy_domain, explode=(1,2))
     P.run(dixels)
+
+if PULL_AND_SEND:
+
+    dixels = MetaCache()
+    files = DicomFile(location=save_dir)
+
+    # Start from the key file or other cache
+    fp = os.path.join(data_dir, val_key_fn)
+    dixels.load(fp)
+
+    class PeerPorter(Porter, PeerSendMixin, ProxyGetMixin):
+        pass
+
+    P = PeerPorter(source=proxy, proxy_domain=proxy_domain, peer_dest=review_service)
+    logging.info(P)
+
+    P.run2(dixels)
 
 
 # # ---------------------------------
